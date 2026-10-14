@@ -105,14 +105,14 @@ a { color: var(--accent); }
   border-radius: 12px;
   padding: 18px;
 }
-.tf-inputs { display: grid; gap: 6px; max-width: 640px; }
+.tf-inputs { display: grid; gap: 6px; }
 .frac-bar { height: 2px; background: var(--text-primary); border-radius: 2px; margin: 2px 0; }
 .field { display: grid; gap: 4px; font-size: .85rem; color: var(--text-secondary); }
 .field input[type='number'], .field input:not([type]) {
   font: inherit; font-size: 1rem; color: var(--text-primary);
   background: var(--surface-0); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%;
 }
-.tf-inputs .field input { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.field.mono input, .field.mono textarea { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 .field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .field.check { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; }
 .input-suffix { position: relative; display: flex; align-items: center; }
@@ -191,10 +191,28 @@ th { color: var(--text-secondary); font-weight: 600; font-size: .8rem; backgroun
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 
-.block-diagram { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; background: var(--surface-2); border-radius: 8px; font-family: ui-monospace, monospace; font-size: .9rem; }
-.block-diagram .blk { border: 2px solid var(--accent); border-radius: 6px; padding: 4px 10px; background: var(--surface-1); }
-.block-diagram .sum { border: 2px solid var(--text-secondary); border-radius: 50%; width: 28px; height: 28px; display: grid; place-items: center; }
-.block-diagram small { flex-basis: 100%; color: var(--text-muted); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+fieldset.block { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px 14px; margin: 0; min-width: 0; display: grid; gap: 10px; align-content: start; }
+fieldset.block legend { font-weight: 600; padding: 0 6px; color: var(--text-primary); }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; background: var(--surface-2); border-radius: 8px; padding: 3px; width: fit-content; max-width: 100%; }
+.tab { border: 0; background: transparent; color: var(--text-secondary); padding: 5px 10px; border-radius: 6px; font-size: .82rem; }
+.tab.active { background: var(--surface-1); color: var(--text-primary); box-shadow: 0 1px 3px rgb(0 0 0 / .12); font-weight: 600; }
+.tab:focus-visible { outline: 2px solid var(--accent); }
+.row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ss-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ss-inputs .hint { grid-column: 1 / -1; }
+.loop-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; }
+.loop-fields > div { display: grid; gap: 8px; align-content: start; }
+.sub { font-size: .85rem; font-weight: 600; color: var(--text-secondary); }
+.field textarea { font: inherit; color: var(--text-primary); background: var(--surface-0); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; resize: vertical; }
+.loop-diagram { width: 100%; max-width: 560px; height: auto; display: block; margin: 0 auto; }
+.ld-block rect { fill: var(--surface-1); stroke: var(--accent); stroke-width: 2; }
+.ld-text text { fill: var(--text-primary); font-size: 17px; font-family: 'JetBrains Mono', ui-monospace, monospace; dominant-baseline: middle; }
+.ld-text .ld-small { font-size: 14px; fill: var(--text-secondary); }
+.ld-text .ld-sign { font-size: 18px; font-weight: 700; fill: var(--text-secondary); }
+.summary-blocks { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; color: var(--text-primary); }
+.badge-neutral { color: var(--text-secondary); background: var(--surface-2); }
 
 @media (max-width: 900px) {
   .layout { grid-template-columns: minmax(0, 1fr); }

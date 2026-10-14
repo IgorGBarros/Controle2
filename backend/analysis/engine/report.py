@@ -9,8 +9,7 @@ import numpy as np
 
 from . import items
 from .items import Params
-from .parsing import parse_polynomial
-from .tf import TF
+from .loop import InputError, Loop, build_loop
 
 ITEMS = [
     ("a", "Modelagem e função de transferência", items.item_a),
@@ -32,30 +31,6 @@ ITEMS = [
     ("q", "Ziegler-Nichols — 2º método (ganho crítico)", items.item_q),
     ("r", "Média dos parâmetros e simulação (degrau, rampa e senoide)", None),
 ]
-
-MAX_ORDER = 10
-
-
-class InputError(ValueError):
-    pass
-
-
-def build_system(num_text: str, den_text: str) -> TF:
-    num = parse_polynomial(num_text, "numerador")
-    den = parse_polynomial(den_text, "denominador")
-    if np.allclose(num, 0):
-        raise InputError("O numerador não pode ser nulo.")
-    g = TF(num, den)
-    if g.order < 1:
-        raise InputError("O denominador deve ter grau maior ou igual a 1.")
-    if g.order > MAX_ORDER:
-        raise InputError(f"Ordem máxima suportada: {MAX_ORDER}.")
-    if not g.is_proper:
-        raise InputError("A função de transferência deve ser própria (grau do numerador ≤ grau do denominador).")
-    if not np.all(np.isfinite(g.num)) or not np.all(np.isfinite(g.den)):
-        raise InputError("Coeficientes inválidos.")
-    return g
-
 
 def sanitize(obj):
     if isinstance(obj, dict):
@@ -82,22 +57,45 @@ def sanitize(obj):
     return obj
 
 
-def analyze(num_text: str, den_text: str, params: Params) -> dict:
-    g = build_system(num_text, den_text)
+def system_info(lp: Loop) -> dict:
+    L = lp.open_loop
+    return {
+        **items.tf_info(lp.plant_raw),
+        "plant": items.block_info(lp.plant_raw),
+        "controller": items.block_info(lp.controller),
+        "sensor": items.block_info(lp.sensor),
+        "controller_pid": lp.controller_pid,
+        "open_loop": items.tf_info(L),
+        "closed_loop": items.tf_info(lp.closed(1.0)),
+        "feedback": "negative" if lp.sign < 0 else "positive",
+        "delay": lp.delay,
+        "pade_order": lp.pade_order,
+        "standard": lp.standard,
+    }
+
+
+def analyze(spec: dict, params: Params) -> dict:
+    """spec: {plant: {...}, controller: {...}, sensor: {...}, feedback, delay, pade_order}."""
+    lp = build_loop(spec)
     results: dict = {}
     for key, title, fn in ITEMS:
         try:
             if key == "r":
-                data = items.item_r(g, params, results["p"]["data"] or {}, results["q"]["data"] or {})
+                data = items.item_r(lp, params, results["p"]["data"] or {}, results["q"]["data"] or {})
             else:
-                data = fn(g, params)
+                data = fn(lp, params)
             results[key] = {"key": key, "title": title, "data": data, "error": None}
         except Exception as exc:  # noqa: BLE001 - um item com erro não derruba os demais
             traceback.print_exc()
             results[key] = {"key": key, "title": title, "data": None, "error": str(exc)}
     payload = {
-        "system": items.tf_info(g),
+        "system": system_info(lp),
         "params": params.__dict__,
         "items": [results[k] for k, _, _ in ITEMS],
     }
     return sanitize(payload)
+
+
+def analyze_tf(num: str, den: str, params: Params | None = None) -> dict:
+    """Atalho: planta G(s) = num/den com realimentação unitária negativa."""
+    return analyze({"plant": {"mode": "tf", "num": num, "den": den}}, params or Params())

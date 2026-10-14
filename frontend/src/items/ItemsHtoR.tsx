@@ -1,4 +1,5 @@
 import { RootLocusChart, XYChart } from '../components/Charts'
+import { LoopDiagram } from '../components/LoopDiagram'
 import { Tex } from '../components/Tex'
 import { Matlab, Note, StabilityBadge, Stats, StepInfoStats, Table } from '../components/ui'
 import { behaviourText, fmt, fmtCx, fmtInterval, texNum } from '../lib/format'
@@ -47,14 +48,14 @@ function InputCharts({ rs, kinds }: { rs: ResponseSet; kinds: ('step' | 'ramp' |
 export function ItemHView({ d }: { d: ItemH }) {
   return (
     <>
-      <h3>Malha aberta — G(s)</h3>
+      <h3>Malha aberta — {d.standard ? 'G(s)' : 'L(s) = C(s)G(s)H(s)'}</h3>
       <InputCharts rs={d.open_loop} kinds={['step', 'impulse', 'ramp']} />
-      <h3>Malha fechada com realimentação unitária (K = 1)</h3>
+      <h3>Malha fechada (K = 1)</h3>
       <Tex block>{`T(s) = ${d.closed_loop_tf}`}</Tex>
       <InputCharts rs={d.closed_loop} kinds={['step', 'impulse', 'ramp']} />
       <Note>
         Para a rampa, a saída sempre cresce junto com a entrada; o que importa é o <em>erro</em> r(t) − y(t). Erro em regime infinito significa que o
-        sistema não consegue acompanhar a rampa (sistema tipo 0), e não que ele seja instável.
+        sistema não consegue acompanhar a rampa (sistema tipo 0), e não que ele seja instável. O erro é sempre medido como e(t) = r(t) − y(t).
       </Note>
     </>
   )
@@ -69,11 +70,11 @@ export function ItemIView({ d }: { d: ItemI }) {
         <strong>{d.stable_intervals.length ? d.stable_intervals.map(fmtInterval).join(' ∪ ') : 'nenhum K > 0'}</strong>
       </p>
       <Table
-        head={['Constante de erro (K = 1)', 'Valor', 'Erro em regime']}
+        head={[d.unity_feedback ? 'Constante de erro (K = 1)' : 'Constante de erro de G_eq = T/(1−T), K = 1', 'Valor', 'Erro em regime']}
         rows={[
-          [<Tex key="k">{'K_p = \\lim_{s\\to0} G(s)'}</Tex>, fmt(c.Kp), <Tex key="e">{'e_{degrau} = 1/(1+K\\,K_p)'}</Tex>],
-          [<Tex key="k">{'K_v = \\lim_{s\\to0} sG(s)'}</Tex>, fmt(c.Kv), <Tex key="e">{'e_{rampa} = 1/(K\\,K_v)'}</Tex>],
-          [<Tex key="k">{'K_a = \\lim_{s\\to0} s^2G(s)'}</Tex>, fmt(c.Ka), <Tex key="e">{'e_{parábola} = 1/(K\\,K_a)'}</Tex>],
+          [<Tex key="k">{'K_p = \\lim_{s\\to0} G_{eq}(s)'}</Tex>, fmt(c.Kp), <Tex key="e">{'e_{degrau} = 1/(1+K_p)'}</Tex>],
+          [<Tex key="k">{'K_v = \\lim_{s\\to0} sG_{eq}(s)'}</Tex>, fmt(c.Kv), <Tex key="e">{'e_{rampa} = 1/K_v'}</Tex>],
+          [<Tex key="k">{'K_a = \\lim_{s\\to0} s^2G_{eq}(s)'}</Tex>, fmt(c.Ka), <Tex key="e">{'e_{parábola} = 1/K_a'}</Tex>],
         ]}
       />
       <div className="grid-3">
@@ -106,7 +107,8 @@ export function ItemIView({ d }: { d: ItemI }) {
 export function ItemJView({ d }: { d: ItemJ }) {
   return (
     <>
-      <p>Equação característica da malha fechada com ganho proporcional K:</p>
+      <p>Equação característica da malha fechada com ganho K: 1 {d.positive_feedback ? '−' : '+'} K·L(s) = 0</p>
+      {d.positive_feedback && <Note tone="warn">Realimentação positiva: o lugar das raízes é o “de 0°”, traçado aqui como o lugar de −L(s).</Note>}
       <Tex block>{d.characteristic}</Tex>
       <RootLocusChart data={d} />
       <Table
@@ -206,8 +208,8 @@ export function ItemMView({ d }: { d: ItemM }) {
         x={d.t}
         series={d.series}
         lines={[
-          { key: 'open', label: 'Malha aberta G(s)' },
-          { key: 'closed', label: 'Malha fechada G/(1+G)' },
+          { key: 'open', label: 'Malha aberta' },
+          { key: 'closed', label: 'Malha fechada (K = 1)' },
         ]}
         xLabel="Tempo (s)"
         yLabel="Amplitude"
@@ -240,6 +242,9 @@ export function ItemNView({ d }: { d: ItemN }) {
       <p>
         Entrada de referência para o tipo deste sistema: <strong>{d.input}</strong>. Erro desejado: <strong>{fmt((d.target ?? 0) * 100)} %</strong>.
       </p>
+      {!d.unity_feedback && (
+        <Note>Com realimentação não unitária, o erro e = r − y é obtido diretamente de T(s) e o ganho K é encontrado numericamente.</Note>
+      )}
       <Tex block>{d.limit ?? ''}</Tex>
       <Tex block>{d.formula ?? ''}</Tex>
       <Stats
@@ -250,7 +255,7 @@ export function ItemNView({ d }: { d: ItemN }) {
         ]}
       />
       {d.warning && <Note tone="bad">{d.warning}</Note>}
-      {d.stable && <Note tone="ok">Com K = {fmt(d.K)} a malha fechada é estável e o erro em regime fica em {behaviourText(d.error)}.</Note>}
+      {d.stable && d.error && <Note tone="ok">Com K = {fmt(d.K)} a malha fechada é estável e o erro em regime fica em {behaviourText(d.error)}.</Note>}
       {d.t && d.series && (
         <XYChart
           x={d.t}
@@ -381,8 +386,8 @@ export function ItemPView({ d }: { d: ItemP }) {
   return (
     <>
       <p>
-        No 1º método obtém-se a resposta da planta ao degrau. Pela reta tangente no ponto de inflexão da curva em S determinam-se o atraso L e a constante de
-        tempo T.
+        No 1º método obtém-se a resposta do processo ao degrau{d.process_is_plant === false ? ' (P(s) = G(s)H(s), o que o controlador “enxerga”)' : ''}. Pela reta tangente no ponto
+        de inflexão da curva em S determinam-se o atraso L e a constante de tempo T. O controlador C(s) informado é substituído pelos controladores calculados.
       </p>
       <RulesTable rules={d.rules} />
       {!d.applicable ? (
@@ -440,7 +445,7 @@ export function ItemQView({ d }: { d: ItemQ }) {
   return (
     <>
       <p>
-        Usando apenas a ação proporcional, aumenta-se Kp de zero até o ganho crítico Ku, no qual a saída apresenta oscilação sustentada com período Pu.
+        Substituindo C(s) por uma ação proporcional, aumenta-se Kp de zero até o ganho crítico Ku, no qual a saída apresenta oscilação sustentada com período Pu.
       </p>
       <RulesTable rules={d.rules} />
       {!d.applicable ? (
@@ -475,11 +480,9 @@ export function ItemRView({ d }: { d: ItemR }) {
         head={['Controlador', 'Kp médio', 'Ki médio', 'Kd médio']}
         rows={(['P', 'PI', 'PID'] as const).map((k) => [k, fmt(a[k].Kp), fmt(a[k].Ki), fmt(a[k].Kd)])}
       />
-      <p>Sistema montado (equivalente ao diagrama do SIMULINK) com o PID médio e realimentação unitária H(s) = 1:</p>
-      <div className="block-diagram" aria-label="Diagrama de blocos">
-        <span>r(t)</span>→<span className="sum">Σ</span>→<span className="blk">PID(s)</span>→<span className="blk">G(s)</span>→<span>y(t)</span>
-        <small>realimentação unitária negativa</small>
-      </div>
+      <p>Sistema montado (equivalente ao diagrama do SIMULINK) com o PID médio no lugar de C(s):</p>
+      <LoopDiagram controller="PID(s)" plant="G(s)" sensor={d.sensor_unity ? 'H = 1' : 'H(s)'} feedback={d.positive_feedback ? 'positive' : 'negative'} />
+      {!d.sensor_unity && d.sensor_tf && <Tex block>{`H(s) = ${d.sensor_tf}`}</Tex>}
       <Tex block>{`C(s) = ${d.controller_tf}`}</Tex>
       <Tex block>{`T(s) = ${d.tf}`}</Tex>
       <p>

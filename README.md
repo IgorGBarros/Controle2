@@ -1,7 +1,18 @@
 # Controle II — Análise de Sistemas
 
-Aplicação web que replica, para **qualquer planta G(s)**, todos os itens do *Trabalho de Controle II*
+Aplicação web que replica, para **qualquer malha de controle**, todos os itens do *Trabalho de Controle II*
 (Engenharia Mecatrônica — UNIFACS, 2013), originalmente resolvido no MATLAB/SIMULINK.
+
+```
+ r ──►(Σ)──► K·C(s) ──► G(s)·e^(−θs) ──┬──► y
+       ▲ ∓                             │
+       └────────── H(s) ◄──────────────┘
+```
+
+- **Planta G(s)** por função de transferência, zeros/polos/ganho ou espaço de estados (A, B, C, D), com atraso
+  de transporte opcional (aproximação de Padé de ordem 1 a 6).
+- **Controlador C(s)** por função de transferência ou ganhos PID (o ganho K dos itens multiplica C(s)).
+- **Sensor H(s)** qualquer, com **realimentação negativa ou positiva**.
 
 - **Backend:** Python + Django + Django REST Framework (cálculos com NumPy, SciPy e SymPy)
 - **Frontend:** React + TypeScript + Vite (gráficos com Recharts, fórmulas com KaTeX)
@@ -29,8 +40,10 @@ Aplicação web que replica, para **qualquer planta G(s)**, todos os itens do *T
 | q | Ziegler-Nichols 2º método (ganho crítico Ku e período Pu): P, PI, PID | — |
 | r | Média dos parâmetros dos dois métodos e simulação para degrau, rampa e senoide | SIMULINK |
 
-A planta pode ser informada no formato vetorial do MATLAB (`1 11.3 14 10`) ou como expressão em `s`
-(`(s+10)(s^2+1.3s+1)`). O exemplo padrão é a planta do trabalho original:
+Polinômios podem ser informados no formato vetorial do MATLAB (`1 11.3 14 10`) ou como expressão em `s`
+(`(s+10)(s^2+1.3s+1)`). Os itens de “malha aberta” (c, d, f, g, j, k) usam L(s) = C(s)G(s)H(s); os de malha
+fechada usam T(s) = K·C·G / (1 ∓ K·C·G·H); o erro é sempre e = r − y. Nos itens p, q e r o controlador C(s) é
+substituído pelos controladores de Ziegler-Nichols. O exemplo padrão é a planta do trabalho original:
 
 ```
 G(s) = 1 / (s³ + 11,3 s² + 14 s + 10)
@@ -84,8 +97,12 @@ cd frontend && npm run lint && npm run build
 
 ```json
 {
-  "num": "1",
-  "den": "1 11.3 14 10",
+  "plant": { "mode": "tf", "num": "1", "den": "1 11.3 14 10" },
+  "controller": { "mode": "tf", "num": "1", "den": "1" },
+  "sensor": { "num": "1", "den": "1" },
+  "feedback": "negative",
+  "delay": 0,
+  "pade_order": 2,
   "k": 10,
   "ess_target": 0.05,
   "ts_spec": 3,
@@ -95,6 +112,9 @@ cd frontend && npm run lint && npm run build
 }
 ```
 
+A planta também aceita `{"mode": "zpk", "zeros": "-3", "poles": "0, -2, -4", "gain": 8}` ou
+`{"mode": "ss", "A": "[0 1; -2 -0.5]", "B": "[0; 1]", "C": "[1 0]", "D": "0"}`; o controlador aceita
+`{"mode": "pid", "kp": 20, "ki": 10, "kd": 5}`. Por compatibilidade, `num`/`den` no nível raiz ainda são aceitos.
 Opcionais: `k_step`, `k_ramp`, `k_impulse`, `sine_amp`, `tfinal`. A resposta contém `system` e a lista
 `items` (a–r), cada um com `data` ou `error`.
 
@@ -107,11 +127,13 @@ backend/
   config/                 configurações do Django
   analysis/
     engine/
-      parsing.py          leitura de polinômios (vetor ou expressão em s)
+      parsing.py          leitura de polinômios, listas complexas e matrizes
+      loop.py             malha C(s), G(s), H(s), sinal, atraso (Padé)
       tf.py               função de transferência, simulação, stepinfo
       stability.py        Routh-Hurwitz, lugar das raízes, Ku
       items.py            itens a) a r)
       report.py           orquestração e serialização JSON
+    examples.py           malhas de exemplo
     views.py, urls.py     API REST
     tests/                testes do motor e da API
 frontend/

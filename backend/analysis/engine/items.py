@@ -1,4 +1,4 @@
-"""Itens a) a r) do Trabalho de Controle II, generalizados para qualquer planta G(s)."""
+"""Itens a) a r) do Trabalho de Controle II, generalizados para qualquer malha C(s), G(s), H(s)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import numpy as np
 from scipy import signal
 from scipy.optimize import brentq
 
+from .loop import Loop, is_unity, pid_tf
 from .formatting import complex_str, factored_latex, fmt, fmt_plain, fmt_txt, poly_latex, tf_latex
 from .stability import (
     critical_gain,
@@ -97,19 +98,40 @@ def describe(b: dict) -> str:
     return BEHAVIOUR_TEXT[b["kind"]].format(v=fmt_txt(b["value"]) if b["value"] is not None else "")
 
 
-def pid_tf(kp: float, ki: float = 0.0, kd: float = 0.0, g: TF | None = None, n_filter: float = 100.0) -> TF:
-    """C(s) = Kp + Ki/s + Kd s (derivada filtrada se a malha fechada ficaria imprópria)."""
-    if kd and g is not None and g.relative_degree < 1:
-        # Kd N s/(s+N)
-        num = padd(pmul([kp], [1, n_filter]), [kd * n_filter, 0])
-        den = np.array([1.0, n_filter])
-        c = TF(num, den)
-        if ki:
-            c = TF(padd(pmul(c.num, [1, 0]), pmul([ki], c.den)), pmul(c.den, [1, 0]))
-        return c
-    if ki:
-        return TF([kd, kp, ki], [1.0, 0.0])
-    return TF([kd, kp], [1.0])
+def error_limit(T: TF, q: int) -> float:
+    """lim s→0 de s·R(s)·[1 − T(s)] com R = 1/s^q, sem verificar estabilidade (erro r − y)."""
+    a = padd(T.den, -T.num)
+    if np.allclose(a, 0):
+        return 0.0
+
+    def low(p):
+        p = np.asarray(p)
+        z = 0
+        while z < len(p) - 1 and abs(p[len(p) - 1 - z]) < 1e-12:
+            z += 1
+        return z, p[len(p) - 1 - z]
+
+    za, ca = low(a)
+    zd, cd = low(T.den)
+    order = za - zd - (q - 1)
+    if order > 0:
+        return 0.0
+    if order < 0:
+        return math.inf
+    return float(ca / cd)
+
+
+def fb_sign_tex(lp: Loop) -> str:
+    return "+" if lp.sign < 0 else "-"
+
+
+def closed_formula(lp: Loop, k_sym: str = "K") -> str:
+    """Expressão simbólica de T(s) para a malha."""
+    c = "C(s)" if not is_unity(lp.controller) else ""
+    h = "H(s)" if not is_unity(lp.sensor) else ""
+    kc = rf"{k_sym}\,{c}" if k_sym else c
+    fwd = f"{kc}G(s)".strip() or "G(s)"
+    return rf"rac{{{fwd}}}{{1 {fb_sign_tex(lp)} {fwd}{h}}}"
 
 
 def response_set(T: TF, t: np.ndarray, kinds=("step", "ramp", "impulse"), sine: tuple | None = None) -> dict:
@@ -184,35 +206,66 @@ def ode_side(coeffs, var: str) -> str:
 
 # --- a) modelagem ---------------------------------------------------------
 
-def item_a(g: TF, p: Params) -> dict:
+def block_info(g: TF) -> dict:
+    return {"latex": tf_latex(g.num, g.den), "poles": g.poles(), "zeros": g.zeros(), "unity": is_unity(g)}
+
+
+def item_a(lp: Loop, p: Params) -> dict:
+    g = lp.plant_raw
     A, B, C, D = signal.tf2ss(g.num, g.den)
     n = g.order
-    a_sym = " + ".join(
-        [f"s^{{{n}}}"] + [f"a_{{{i}}}" + (f"s^{{{n - i}}}" if n - i > 1 else ("s" if n - i == 1 else "")) for i in range(1, n + 1)]
-    )
-    return {
+    L = lp.open_loop
+    T = lp.closed(1.0)
+    vec = lambda c: "[" + " ".join(fmt_plain(x, 8) for x in c) + "]"  # noqa: E731
+    matlab = [f"G = tf({vec(g.num)}, {vec(g.den)});"]
+    if lp.delay:
+        matlab += [f"G.InputDelay = {fmt_plain(lp.delay, 8)};", f"G = pade(G, {lp.pade_order});"]
+    matlab += [
+        f"C = tf({vec(lp.controller.num)}, {vec(lp.controller.den)});",
+        f"H = tf({vec(lp.sensor.num)}, {vec(lp.sensor.den)});",
+        "L = C*G*H            % malha aberta",
+        f"T = feedback(C*G, H{', +1' if lp.sign > 0 else ''})   % malha fechada",
+    ]
+    out = {
         "order": n,
-        "ode_generic": rf"y^{{({n})}} + a_1 y^{{({n - 1})}} + \dots + a_{{{n}}} y = u" if n > 3 else None,
-        "tf_generic": rf"\frac{{Y(s)}}{{U(s)}} = \frac{{N(s)}}{{{a_sym}}}",
         "ode": f"{ode_side(g.den, 'y')} = {ode_side(g.num, 'u')}",
         "laplace": rf"\left({poly_latex(g.den)}\right) Y(s) = "
         + ("U(s)" if len(g.num) == 1 and abs(g.num[0] - 1) < 1e-12 else rf"\left({poly_latex(g.num)}\right) U(s)"),
-        "tf": rf"G(s) = \frac{{Y(s)}}{{U(s)}} = {tf_latex(g.num, g.den)}",
+        "tf": rf"G(s) = \frac{{Y(s)}}{{U(s)}} = {tf_latex(g.num, g.den)}" + (rf"\,e^{{-{fmt(lp.delay)}s}}" if lp.delay else ""),
         "state_space": {"A": A, "B": B, "C": C, "D": D},
-        "matlab": [f"num = [{' '.join(fmt_plain(c, 8) for c in g.num)}];", f"den = [{' '.join(fmt_plain(c, 8) for c in g.den)}];", "G = tf(num, den)"],
+        "standard": lp.standard,
+        "feedback": "negative" if lp.sign < 0 else "positive",
+        "blocks": {"plant": block_info(g), "controller": block_info(lp.controller), "sensor": block_info(lp.sensor)},
+        "controller_pid": lp.controller_pid,
+        "delay": lp.delay,
+        "pade": tf_latex(*_pade_parts(lp)) if lp.delay else None,
+        "pade_order": lp.pade_order,
+        "open_loop": rf"L(s) = C(s)\,G(s)\,H(s) = {tf_latex(L.num, L.den)}",
+        "closed_loop": rf"T(s) = {closed_formula(lp, '')} = {tf_latex(T.num, T.den)}",
+        "matlab": matlab,
     }
+    return out
+
+
+def _pade_parts(lp: Loop):
+    from .loop import pade
+    P = pade(lp.delay, lp.pade_order)
+    return P.num, P.den
 
 
 # --- b) constantes do sistema ---------------------------------------------
 
-def item_b(g: TF, p: Params) -> dict:
+def item_b(lp: Loop, p: Params) -> dict:
+    g = lp.plant_raw
     poles = g.poles()
     n_complex = int(np.sum(np.abs(poles.imag) > 0))
     ordinal = {1: "primeira", 2: "segunda", 3: "terceira", 4: "quarta", 5: "quinta"}.get(g.order, f"{g.order}ª")
     roots_kind = "com raízes complexas" if n_complex else "com raízes reais"
-    t = tgrid(p, g)
-    y = step(g, t)
+    ge = lp.plant
+    t = tgrid(p, ge)
+    y = step(ge, t)
     return {
+        "delay": lp.delay,
         "den_coeffs": [{"name": f"a_{{{i}}}", "power": g.order - i, "value": float(c)} for i, c in enumerate(g.den) if i > 0],
         "num_coeffs": [{"name": f"b_{{{i}}}", "power": g.num_order - i, "value": float(c)} for i, c in enumerate(g.num)],
         "classification": f"Sistema de {ordinal} ordem {roots_kind}",
@@ -221,13 +274,14 @@ def item_b(g: TF, p: Params) -> dict:
         "dc_gain": g.dc_gain(),
         "tf": tf_latex(g.num, g.den),
         "step": {"t": t, "series": {"step": clip_series(y)}},
-        "step_behaviour": describe(output_behaviour(g, 1)),
+        "step_behaviour": describe(output_behaviour(ge, 1)),
     }
 
 
 # --- c) wn e zeta ------------------------------------------------------------
 
-def item_c(g: TF, p: Params) -> dict:
+def item_c(lp: Loop, p: Params) -> dict:
+    g = lp.open_loop
     poles = g.poles()
     factors = []
     used = [False] * len(poles)
@@ -268,7 +322,8 @@ def item_c(g: TF, p: Params) -> dict:
             second_order = {"wn": wn, "zeta": a1 / (2 * math.sqrt(abs(a0 * a2)))}
     dom = dominant_poles(g)
     return {
-        "factored": rf"G(s) = \frac{{{factored_latex(g.zeros(), g.zpk_gain)}}}{{{factored_latex(poles)}}}",
+        "standard": lp.standard,
+        "factored": rf"{'G' if lp.standard else 'L'}(s) = \frac{{{factored_latex(g.zeros(), g.zpk_gain)}}}{{{factored_latex(poles)}}}",
         "factors": factors,
         "second_order": second_order,
         "dominant": dom,
@@ -278,7 +333,8 @@ def item_c(g: TF, p: Params) -> dict:
 
 # --- d) polos -------------------------------------------------------------
 
-def item_d(g: TF, p: Params) -> dict:
+def item_d(lp: Loop, p: Params) -> dict:
+    g = lp.open_loop
     rows = []
     for r in g.poles():
         wn = abs(r)
@@ -297,28 +353,34 @@ def item_d(g: TF, p: Params) -> dict:
         "gain": g.zpk_gain,
         "stable": stable,
         "routh": routh_table(g.den),
-        "verdict": "Planta estável em malha aberta: todos os polos no semiplano esquerdo."
+        "standard": lp.standard,
+        "blocks": None if lp.standard else {
+            "G(s)": [complex_str(x) for x in lp.plant.poles()],
+            "C(s)": [complex_str(x) for x in lp.controller.poles()],
+            "H(s)": [complex_str(x) for x in lp.sensor.poles()],
+        },
+        "verdict": "Malha aberta estável: todos os polos no semiplano esquerdo."
         if stable
-        else "Planta NÃO estável em malha aberta: há polos sobre o eixo imaginário ou no semiplano direito.",
+        else "Malha aberta NÃO estável: há polos sobre o eixo imaginário ou no semiplano direito.",
         "matlab": ["[Zero, Polo, Ganho] = tf2zp(num, den)"],
     }
 
 
 # --- e) fechar a malha com K -----------------------------------------------
 
-def item_e(g: TF, p: Params) -> dict:
-    T = (g * p.k).feedback(1)
-    t = tgrid(p, T, g)
+def item_e(lp: Loop, p: Params) -> dict:
+    T = lp.closed(p.k)
+    t = tgrid(p, T, lp.open_loop)
     y = step(T, t)
     return {
         "K": p.k,
         "closed_loop": tf_info(T),
-        "tf": rf"T(s) = \frac{{K G(s)}}{{1 + K G(s)}} = {tf_latex(T.num, T.den)}",
+        "tf": rf"T(s) = {closed_formula(lp)} = {tf_latex(T.num, T.den)}",
         "step": {"t": t, "series": {"step": clip_series(y)}},
         "info": measured_info(T),
         "behaviour": describe(output_behaviour(T, 1)),
         "ess_step": steady_error(T, 1),
-        "matlab": [f"K = {fmt_plain(p.k, 8)};", "FTMF = feedback(K*G, 1)", "step(FTMF)"],
+        "matlab": [f"K = {fmt_plain(p.k, 8)};", f"FTMF = feedback(K*C*G, H{', +1' if lp.sign > 0 else ''})", "step(FTMF)"],
     }
 
 
@@ -358,7 +420,8 @@ def bode_corners(g: TF) -> list[dict]:
     return corners
 
 
-def item_f(g: TF, p: Params) -> dict:
+def item_f(lp: Loop, p: Params) -> dict:
+    g = lp.open_loop
     N = g.system_type
     kb = g.limit_s_power(N)
     corners = bode_corners(g)
@@ -389,13 +452,13 @@ def item_f(g: TF, p: Params) -> dict:
         "type": N,
         "low_slope": low_slope,
         "corners": rows,
-        "bode_form": bode_form_latex(g, kb, N),
+        "bode_form": bode_form_latex(g, kb, N, "G" if lp.standard else "L"),
         "w": w,
         "series": {"mag_asym": mag, "mag": exact_mag, "phase_asym": phase, "phase": exact_phase},
     }
 
 
-def bode_form_latex(g: TF, kb: float, N: int) -> str:
+def bode_form_latex(g: TF, kb: float, N: int, name: str = "G") -> str:
     num_f, den_f = [], []
     for kind, roots, target in (("z", g.zeros(), num_f), ("p", g.poles(), den_f)):
         used = [False] * len(roots)
@@ -424,7 +487,7 @@ def bode_form_latex(g: TF, kb: float, N: int) -> str:
         num_f.insert(0, "s" if N == -1 else f"s^{{{-N}}}")
     num = "".join(num_f) or "1"
     den = "".join(den_f) or "1"
-    return rf"G(s) = {fmt(kb)}\,\frac{{{num}}}{{{den}}}"
+    return rf"{name}(s) = {fmt(kb)}\,\frac{{{num}}}{{{den}}}"
 
 
 # --- g) Bode com margens ---------------------------------------------------------
@@ -473,49 +536,55 @@ def margins(L: TF) -> dict:
     }
 
 
-def item_g(g: TF, p: Params) -> dict:
+def item_g(lp: Loop, p: Params) -> dict:
+    g = lp.open_loop
+    geq = lp.loop_eq
     w = freq_grid(g)
     kg = g * p.k
     return {
         "K": p.k,
+        "standard": lp.standard,
+        "positive_feedback": lp.sign > 0,
         "w": w,
         "series": {
             "mag": 20 * np.log10(np.abs(g.freq(w))),
             "mag_k": 20 * np.log10(np.abs(kg.freq(w))),
             "phase": g.phase_deg(w),
         },
-        "margins": margins(g),
-        "margins_k": margins(kg),
-        "matlab": ["margin(G)", "[Gm, Pm, Wcg, Wcp] = margin(G)"],
+        "margins": margins(geq),
+        "margins_k": margins(geq * p.k),
+        "matlab": ["L = C*G*H;", "margin(L)", "[Gm, Pm, Wcg, Wcp] = margin(L)"],
     }
 
 
 # --- h) degrau, impulso e rampa ----------------------------------------------------
 
-def item_h(g: TF, p: Params) -> dict:
-    T = g.feedback(1)
+def item_h(lp: Loop, p: Params) -> dict:
+    g = lp.open_loop
+    T = lp.closed(1.0)
     t = tgrid(p, g, T)
     ol = response_set(g, t)
     cl = response_set(T, t)
     for kind, q in (("step", 1), ("ramp", 2), ("impulse", 0)):
         cl["analysis"][kind]["error"] = steady_error(T, q)
-    return {"open_loop": ol, "closed_loop": cl, "closed_loop_tf": tf_latex(T.num, T.den)}
+    return {"open_loop": ol, "closed_loop": cl, "closed_loop_tf": tf_latex(T.num, T.den), "standard": lp.standard}
 
 
 # --- i) ganho para cada entrada -----------------------------------------------------
 
-def error_constants(g: TF, k: float = 1.0) -> dict:
-    kg = g * k
-    return {"Kp": kg.limit_s_power(0), "Kv": kg.limit_s_power(1), "Ka": kg.limit_s_power(2)}
+def error_constants(geq: TF) -> dict:
+    """Kp, Kv, Ka da malha com realimentação unitária equivalente G_eq."""
+    return {"Kp": geq.limit_s_power(0), "Kv": geq.limit_s_power(1), "Ka": geq.limit_s_power(2)}
 
 
-def item_i(g: TF, p: Params) -> dict:
-    intervals = stable_k_intervals(g.num, g.den)
+def item_i(lp: Loop, p: Params) -> dict:
+    leq = lp.loop_eq
+    intervals = stable_k_intervals(leq.num, leq.den)
     gains = {"step": p.k_step or p.k, "ramp": p.k_ramp or p.k, "impulse": p.k_impulse or p.k}
-    out = {"stable_intervals": intervals, "inputs": {}}
+    out = {"stable_intervals": intervals, "inputs": {}, "unity_feedback": lp.unity_feedback}
     q_of = {"step": 1, "ramp": 2, "impulse": 0}
     for kind, k in gains.items():
-        T = (g * k).feedback(1)
+        T = lp.closed(k)
         t = tgrid(p, T)
         rs = response_set(T, t, kinds=(kind,))
         rs["analysis"][kind]["error"] = steady_error(T, q_of[kind])
@@ -523,24 +592,27 @@ def item_i(g: TF, p: Params) -> dict:
             "K": k,
             "tf": tf_latex(T.num, T.den),
             "stable": T.is_stable(),
-            "constants": error_constants(g, k),
+            "constants": error_constants(lp.equivalent_unity(k)),
             **rs,
         }
-    out["constants_unit"] = error_constants(g, 1.0)
-    out["system_type"] = g.system_type
+    geq1 = lp.equivalent_unity(1.0)
+    out["constants_unit"] = error_constants(geq1)
+    out["system_type"] = geq1.system_type
     return out
 
 
 # --- j) lugar das raízes ----------------------------------------------------------------
 
-def item_j(g: TF, p: Params) -> dict:
+def item_j(lp: Loop, p: Params) -> dict:
+    g = lp.loop_eq
     rl = root_locus(g)
+    rl["positive_feedback"] = lp.sign > 0
     rl["stable_intervals"] = stable_k_intervals(g.num, g.den)
     rl["routh_k"] = routh_symbolic(g.num, g.den)
     rl["critical"] = critical_gain(g.num, g.den)
     knum = "K" if len(g.num) == 1 and abs(g.num[0] - 1) < 1e-12 else rf"K\left({poly_latex(g.num)}\right)"
     rl["characteristic"] = rf"{poly_latex(g.den)} + {knum} = 0"
-    rl["matlab"] = ["rlocus(G)"]
+    rl["matlab"] = ["rlocus(C*G*H)" if lp.sign < 0 else "rlocus(-C*G*H)   % realimentação positiva"]
     return rl
 
 
@@ -565,18 +637,19 @@ def transient(T: TF) -> dict:
     }
 
 
-def item_k(g: TF, p: Params) -> dict:
-    return transient(g)
+def item_k(lp: Loop, p: Params) -> dict:
+    return transient(lp.open_loop)
 
 
-def item_l(g: TF, p: Params) -> dict:
-    return transient(g.feedback(1))
+def item_l(lp: Loop, p: Params) -> dict:
+    return transient(lp.closed(1.0))
 
 
 # --- m) comparação ---------------------------------------------------------------------
 
-def item_m(g: TF, p: Params) -> dict:
-    T = g.feedback(1)
+def item_m(lp: Loop, p: Params) -> dict:
+    g = lp.open_loop
+    T = lp.closed(1.0)
     t = tgrid(p, g, T)
     return {
         "t": t,
@@ -594,53 +667,96 @@ def k_stable(intervals, k: float) -> bool:
     return any(lo <= k and (hi is None or k < hi) for lo, hi in intervals)
 
 
-def item_n(g: TF, p: Params) -> dict:
+def solve_k_for_error(lp: Loop, q: int, target: float, intervals) -> float | None:
+    """Menor K > 0 com |e_ss(K)| = alvo, priorizando soluções com malha fechada estável."""
+    def f(k):
+        v = abs(error_limit(lp.closed(k), q)) - target
+        return v if np.isfinite(v) else 1e300
+
+    ks = np.geomspace(1e-6, 1e9, 900)
+    fv = np.array([f(k) for k in ks])
+    roots = []
+    for i in np.flatnonzero(np.sign(fv[:-1]) * np.sign(fv[1:]) < 0):
+        if max(abs(fv[i]), abs(fv[i + 1])) >= 1e299:
+            continue
+        roots.append(float(brentq(f, ks[i], ks[i + 1], xtol=1e-12, rtol=1e-12)))
+    if not roots:
+        return None
+    stable = [k for k in roots if k_stable(intervals, k)]
+    return (stable or roots)[0]
+
+
+def item_n(lp: Loop, p: Params) -> dict:
     e = p.ess_target
-    N = max(g.system_type, 0)
-    names = {0: "degrau", 1: "rampa", 2: "parábola"}
-    if N > 2:
-        return {"applicable": False, "reason": "Sistema de tipo maior que 2: erro nulo para degrau, rampa e parábola."}
-    const = g.limit_s_power(N)
-    if N == 0:
-        k = (1.0 / e - 1.0) / const
-        formula = rf"e_{{ss}} = \frac{{1}}{{1 + K\,G(0)}} \Rightarrow {fmt(e)} = \frac{{1}}{{1 + K \cdot {fmt(const)}}} \Rightarrow K = {fmt(k)}"
-        limit = rf"\lim_{{s\to 0}} G(s) = {fmt(const)}"
+    names = {1: "degrau", 2: "rampa", 3: "parábola"}
+    # dois ganhos "genéricos" evitam valores de K que anulam o erro por coincidência
+    T_a, T_b = lp.closed(0.3719), lp.closed(2.861)
+    q = None
+    for qq in (1, 2, 3):
+        va, vb = error_limit(T_a, qq), error_limit(T_b, qq)
+        v = va if np.isfinite(va) and va != 0 else vb
+        if va == 0.0 and vb == 0.0:
+            continue
+        if not np.isfinite(v):
+            return {"applicable": False, "reason": f"O erro em regime para entrada {names[qq]} é infinito para qualquer K."}
+        q = qq
+        break
+    if q is None:
+        return {"applicable": False, "reason": "Erro nulo para degrau, rampa e parábola (sistema de tipo maior que 2)."}
+    N = q - 1
+    leq = lp.loop_eq
+    intervals = stable_k_intervals(leq.num, leq.den)
+    k = None
+    if lp.unity_feedback:
+        Lf = lp.forward
+        const = Lf.limit_s_power(N)
+        k = (1.0 / e - 1.0) / const if N == 0 else 1.0 / (e * const)
+    if k is not None and k > 0:
+        name = "G" if lp.standard else "C G"
+        if N == 0:
+            formula = rf"e_{{ss}} = \frac{{1}}{{1 + K\,{name}(0)}} \Rightarrow {fmt(e)} = \frac{{1}}{{1 + K \cdot {fmt(const)}}} \Rightarrow K = {fmt(k)}"
+            limit = rf"\lim_{{s\to 0}} {name}(s) = {fmt(const)}"
+        else:
+            cname = "K_v" if N == 1 else "K_a"
+            formula = rf"e_{{ss}} = \frac{{1}}{{{cname}}} = \frac{{1}}{{K \lim_{{s\to0}} s^{N} {name}(s)}} \Rightarrow K = {fmt(k)}"
+            limit = rf"\lim_{{s\to 0}} s^{{{N}}} {name}(s) = {fmt(const)}"
     else:
-        k = 1.0 / (e * const)
-        cname = "K_v" if N == 1 else "K_a"
-        formula = rf"e_{{ss}} = \frac{{1}}{{{cname}}} = \frac{{1}}{{K \lim_{{s\to0}} s^{N} G(s)}} \Rightarrow K = {fmt(k)}"
-        limit = rf"\lim_{{s\to 0}} s^{{{N}}} G(s) = {fmt(const)}"
-    intervals = stable_k_intervals(g.num, g.den)
-    stable = k > 0 and k_stable(intervals, k)
-    T = (g * k).feedback(1)
-    t = tgrid(p, T) if stable else time_grid(p.tfinal or 10.0)
-    q = N + 1
-    u = t ** N / math.factorial(N)
-    y = simulate(T, t, u)
+        k = solve_k_for_error(lp, q, e, intervals)
+        limit = rf"e_{{ss}}(K) = \lim_{{s\to 0}} s\,R(s)\left[1 - T(s)\right],\quad R(s) = \frac{{1}}{{s^{{{q}}}}}"
+        formula = (rf"|e_{{ss}}(K)| = {fmt(e)} \Rightarrow K = {fmt(k)}" if k is not None
+                   else rf"|e_{{ss}}(K)| = {fmt(e)}\ \text{{não tem solução com }} K > 0")
     out = {
         "applicable": True,
-        "input": names[N],
+        "input": names[q],
         "target": e,
         "K": k,
         "limit": limit,
         "formula": formula,
-        "stable": stable,
         "stable_intervals": intervals,
+        "unity_feedback": lp.unity_feedback,
+    }
+    if k is None or k <= 0:
+        out["stable"] = False
+        out["warning"] = ("Não existe ganho K > 0 que produza esse erro em regime nesta malha "
+                          "(com realimentação não unitária o erro pode ter um limite mínimo).")
+        return out
+    stable = k_stable(intervals, k)
+    T = lp.closed(k)
+    t = tgrid(p, T) if stable else time_grid(p.tfinal or 10.0)
+    u = t ** N / math.factorial(N)
+    y = simulate(T, t, u)
+    out.update({
+        "stable": stable,
         "tf": tf_latex(T.num, T.den),
         "t": t,
         "series": {"input": u, "output": clip_series(y)},
         "error": steady_error(T, q),
-    }
-    if N == 0 and k < 0:
-        out["warning"] = "O ganho calculado é negativo: o ganho DC da planta é negativo ou o erro alvo é maior que o erro com K=0."
-    if not stable and k > 0:
+    })
+    if not stable:
         first = intervals[0] if intervals and intervals[0][0] == 0 else None
         if first and first[1] is not None:
             kmax = first[1]
-            if N == 0:
-                emin = 1.0 / (1.0 + kmax * const)
-            else:
-                emin = 1.0 / (kmax * const)
+            emin = abs(error_limit(lp.closed(kmax * 0.9999), q))
             out["warning"] = (
                 f"Com K = {fmt_txt(k)} a malha fechada é INSTÁVEL (estável apenas para 0 < K < {fmt_txt(kmax)}). "
                 f"O menor erro alcançável só com ação proporcional é ≈ {fmt_txt(emin * 100)}%. "
@@ -648,12 +764,15 @@ def item_n(g: TF, p: Params) -> dict:
             )
             out["k_max"] = kmax
             out["e_min"] = emin
+        else:
+            out["warning"] = f"Com K = {fmt_txt(k)} a malha fechada é INSTÁVEL."
     return out
 
 
 # --- o) K para Ts e Mp ------------------------------------------------------------------
 
-def item_o(g: TF, p: Params) -> dict:
+def item_o(lp: Loop, p: Params) -> dict:
+    g = lp.loop_eq
     ts, mp = p.ts_spec, p.mp_spec / 100.0
     lnmp = math.log(mp)
     zeta = -lnmp / math.sqrt(math.pi ** 2 + lnmp ** 2)
@@ -676,7 +795,7 @@ def item_o(g: TF, p: Params) -> dict:
             ks_list.append(np.geomspace(lo_, hi_, 120))
     scan = []
     for k in (np.concatenate(ks_list) if ks_list else []):
-        T = (g * k).feedback(1)
+        T = lp.closed(float(k))
         info = measured_info(T)
         if not info.get("stable"):
             continue
@@ -701,7 +820,7 @@ def item_o(g: TF, p: Params) -> dict:
             best = min(mp_ok, key=lambda s: s["ts"])
     resp = None
     if best:
-        T = (g * best["K"]).feedback(1)
+        T = lp.closed(best["K"])
         t = tgrid(p, T)
         resp = {"t": t, "series": {"step": step(T, t)}, "tf": tf_latex(T.num, T.den), "poles": T.poles()}
     return {
@@ -740,12 +859,12 @@ ZN2_RULES = [
 ]
 
 
-def controllers_response(g: TF, table: list[dict], p: Params) -> dict:
+def controllers_response(lp: Loop, table: list[dict], p: Params) -> dict:
     closed = {}
     systems = []
     for row in table:
-        c = pid_tf(row["Kp"], row["Ki"] or 0.0, row["Kd"] or 0.0, g)
-        T = (c * g).feedback(1)
+        c = pid_tf(row["Kp"], row["Ki"] or 0.0, row["Kd"] or 0.0, lp.plant)
+        T = lp.with_controller(c).closed(1.0)
         systems.append(T)
         closed[row["controller"]] = {
             "controller_tf": tf_latex(c.num, c.den),
@@ -768,7 +887,8 @@ def pid_rows(kp_p, kp_pi, ti_pi, kp_pid, ti_pid, td_pid) -> list[dict]:
     ]
 
 
-def item_p(g: TF, p: Params) -> dict:
+def item_p(lp: Loop, p: Params) -> dict:
+    g = lp.process()
     if not g.is_stable() or g.system_type != 0:
         return {"applicable": False, "rules": ZN1_RULES,
                 "reason": "O 1º método exige uma planta estável sem integrador (resposta ao degrau em forma de S). "
@@ -809,13 +929,15 @@ def item_p(g: TF, p: Params) -> dict:
         "tangent": [[L, 0.0], [L + T, dc]],
         "table": table,
         "warnings": warnings,
-        **controllers_response(g, table, p),
+        "process_is_plant": is_unity(lp.sensor),
+        **controllers_response(lp, table, p),
     }
 
 
 # --- q) Ziegler-Nichols 2º método -----------------------------------------------------
 
-def item_q(g: TF, p: Params) -> dict:
+def item_q(lp: Loop, p: Params) -> dict:
+    g = lp.process_eq()
     crit = critical_gain(g.num, g.den)
     if not crit or not crit.get("Pu"):
         return {"applicable": False, "rules": ZN2_RULES,
@@ -823,7 +945,7 @@ def item_q(g: TF, p: Params) -> dict:
                           "(o lugar das raízes não cruza o eixo imaginário), então não existe Ku."}
     ku, pu, wu = crit["Ku"], crit["Pu"], crit["wu"]
     table = pid_rows(0.5 * ku, 0.45 * ku, pu / 1.2, 0.6 * ku, 0.5 * pu, 0.125 * pu)
-    Tku = (g * ku).feedback(1)
+    Tku = lp.with_controller(TF([ku], [1.0])).closed(1.0)
     t = time_grid(p.tfinal or max(10 * pu, 10.0))
     return {
         "applicable": True,
@@ -833,13 +955,13 @@ def item_q(g: TF, p: Params) -> dict:
         "wu": wu,
         "oscillation": {"t": t, "series": {"step": clip_series(step(Tku, t))}},
         "table": table,
-        **controllers_response(g, table, p),
+        **controllers_response(lp, table, p),
     }
 
 
 # --- r) média dos parâmetros ------------------------------------------------------------
 
-def item_r(g: TF, p: Params, zn1: dict, zn2: dict) -> dict:
+def item_r(lp: Loop, p: Params, zn1: dict, zn2: dict) -> dict:
     sources = [s for s in (zn1, zn2) if s.get("applicable")]
     if not sources:
         return {"applicable": False, "reason": "Nenhum dos métodos de Ziegler-Nichols é aplicável a esta planta."}
@@ -850,8 +972,8 @@ def item_r(g: TF, p: Params, zn1: dict, zn2: dict) -> dict:
             k: (float(np.mean([r[k] for r in rows])) if rows[0][k] is not None else None) for k in ("Kp", "Ki", "Kd")
         }
     pid = avg["PID"]
-    c = pid_tf(pid["Kp"], pid["Ki"], pid["Kd"], g)
-    T = (c * g).feedback(1)
+    c = pid_tf(pid["Kp"], pid["Ki"], pid["Kd"], lp.plant)
+    T = lp.with_controller(c).closed(1.0)
     t = tgrid(p, T)
     resp = response_set(T, t, kinds=("step", "ramp"), sine=(p.sine_amp, p.sine_freq))
     for kind, q in (("step", 1), ("ramp", 2)):
@@ -865,5 +987,8 @@ def item_r(g: TF, p: Params, zn1: dict, zn2: dict) -> dict:
         "stable": T.is_stable(),
         "info": measured_info(T),
         "sine": {"amp": p.sine_amp, "freq": p.sine_freq},
+        "sensor_unity": is_unity(lp.sensor),
+        "sensor_tf": tf_latex(lp.sensor.num, lp.sensor.den),
+        "positive_feedback": lp.sign > 0,
         **resp,
     }
