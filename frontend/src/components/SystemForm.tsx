@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { completeLoop, DEFAULT_LOOP, DEFAULT_PARAMS } from '../lib/defaults'
 import type { AnalyzeParams, AnalyzeRequest, ControllerSpec, Example, Feedback, LoopSpec, PlantSpec } from '../lib/types'
+import { DescribePanel } from './DescribePanel'
 import { LoopDiagram } from './LoopDiagram'
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
   loading: boolean
   onSubmit: (req: AnalyzeRequest) => void
   fieldErrors: Record<string, string[]>
+  llmEnabled: boolean
 }
 
 type ParamField = Exclude<keyof AnalyzeParams, 'zn_include_gain'>
@@ -79,7 +81,7 @@ function NumberField({ label, value, onChange, optional, suffix, scale = 1, step
   )
 }
 
-export function SystemForm({ examples, loading, onSubmit, fieldErrors }: Props) {
+export function SystemForm({ examples, loading, onSubmit, fieldErrors, llmEnabled }: Props) {
   const [loop, setLoop] = useState<Required<LoopSpec>>(completeLoop(DEFAULT_LOOP))
   const [params, setParams] = useState<AnalyzeParams>(DEFAULT_PARAMS)
   const [formKey, setFormKey] = useState(0)
@@ -107,11 +109,18 @@ export function SystemForm({ examples, loading, onSubmit, fieldErrors }: Props) 
     onSubmit({ ...params, ...next })
   }
 
+  const applySpec = (spec: LoopSpec) => {
+    setLoop(completeLoop(spec))
+    setFormKey((k) => k + 1)
+  }
+
   const ctrlLabel = ctrl.mode === 'pid' ? 'K·PID(s)' : ctrl.num === '1' && ctrl.den === '1' ? 'K' : 'K·C(s)'
   const sensorUnity = (loop.sensor.num ?? '1').trim() === '1' && (loop.sensor.den ?? '1').trim() === '1'
   const plantErrors = errorsOf(fieldErrors, 'plant', 'system', 'num', 'den')
 
   return (
+    <>
+    <DescribePanel enabled={llmEnabled} onApply={applySpec} />
     <form className="system-form" onSubmit={submit} key={formKey}>
       <div className="form-grid">
         <fieldset className="block">
@@ -251,5 +260,6 @@ export function SystemForm({ examples, loading, onSubmit, fieldErrors }: Props) 
         )}
       </div>
     </form>
+    </>
   )
 }

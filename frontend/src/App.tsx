@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Report } from './components/Report'
 import { SystemForm } from './components/SystemForm'
+import { Tutor } from './components/Tutor'
 import { Tex } from './components/Tex'
 import { Note, Section, StabilityBadge } from './components/ui'
 import { ItemAView, ItemBView, ItemCView, ItemDView, ItemEView, ItemFView, ItemGView } from './items/ItemsAtoG'
 import { ItemHView, ItemIView, ItemJView, ItemMView, ItemNView, ItemOView, ItemPView, ItemQView, ItemRView, TransientView } from './items/ItemsHtoR'
-import { analyze, ApiError, fetchExamples } from './lib/api'
+import { analyze, ApiError, fetchExamples, fetchLlmStatus, type LlmStatus } from './lib/api'
 import { DEFAULT_LOOP, DEFAULT_PARAMS } from './lib/defaults'
 import { fmtCx } from './lib/format'
 import type { AnalysisResult, AnalyzeRequest, Example, Item } from './lib/types'
@@ -71,6 +72,8 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
+  const [lastRequest, setLastRequest] = useState<AnalyzeRequest | null>(null)
+  const [llm, setLlm] = useState<LlmStatus>({ enabled: false, model: '' })
   const abortRef = useRef<AbortController | null>(null)
 
   const run = useCallback(async (req: AnalyzeRequest) => {
@@ -82,6 +85,7 @@ export default function App() {
     setFieldErrors({})
     try {
       setResult(await analyze(req, ctrl.signal))
+      setLastRequest(req)
     } catch (e) {
       if ((e as Error).name === 'AbortError') return
       if (e instanceof ApiError) {
@@ -95,6 +99,7 @@ export default function App() {
 
   useEffect(() => {
     fetchExamples().then(setExamples).catch(() => setExamples([]))
+    fetchLlmStatus().then(setLlm).catch(() => undefined)
     void Promise.resolve().then(() => run({ ...DEFAULT_PARAMS, ...DEFAULT_LOOP }))
   }, [run])
 
@@ -110,7 +115,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="no-print"><SystemForm examples={examples} loading={loading} onSubmit={run} fieldErrors={fieldErrors} /></div>
+      <div className="no-print"><SystemForm examples={examples} loading={loading} onSubmit={run} fieldErrors={fieldErrors} llmEnabled={llm.enabled} /></div>
       {error && <Note tone="bad">{error}</Note>}
 
       {result && (
@@ -129,6 +134,11 @@ export default function App() {
                   <b>★</b> Relatório final explicativo
                 </a>
               </li>
+              <li>
+                <a href="#tutor">
+                  <b>IA</b> Tutor
+                </a>
+              </li>
             </ul>
           </nav>
           <main>
@@ -137,6 +147,7 @@ export default function App() {
               <ItemSection key={it.key} item={it} />
             ))}
             {result.report && <Report report={result.report} k={result.params.k} />}
+            {lastRequest && <Tutor request={lastRequest} enabled={llm.enabled} model={llm.model} />}
           </main>
         </div>
       )}

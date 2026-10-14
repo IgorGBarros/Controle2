@@ -62,6 +62,29 @@ O relatório inclui indicadores de resposta em frequência da malha fechada (lar
 frequência de ressonância), o diagrama polar/Nyquist de L(jω) com o critério Z = N + P, e pode ser
 impresso ou salvo em PDF pelo navegador. Todos os números vêm do motor de cálculo; o texto é gerado a partir deles.
 
+### Recursos de IA (Claude)
+
+Dois recursos opcionais usam a API do Claude (SDK oficial `anthropic`, modelo padrão `claude-opus-5-5`):
+
+- **Descrever o sistema em linguagem natural** — o aluno escreve, por exemplo, *"motor CC com J = 0,01,
+  b = 0,1, R = 1 Ω…"* e o modelo deriva G(s), C(s) e H(s), mostrando a modelagem, as hipóteses e o que faltou
+  informar. A saída é estruturada (JSON Schema) e **validada pelo motor de cálculo** antes de preencher o
+  formulário; o aluno confere e clica em "Analisar malha".
+- **Tutor de IA** — um chat, ao final da página, que responde perguntas sobre a malha analisada. O backend
+  recalcula a análise a partir da malha (não confia em números vindos do navegador) e envia ao modelo os
+  resultados e o relatório; o tutor explica com base em Ogata e Meza, sem inventar valores. As respostas
+  chegam em streaming e as instruções e o contexto da análise ficam em cache de prompt entre as perguntas.
+
+Para habilitar, defina a chave no ambiente do backend antes de iniciar o Django:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export CLAUDE_MODEL=claude-opus-5-5   # opcional
+```
+
+Sem a chave, a ferramenta funciona normalmente e os dois painéis mostram como habilitá-los. Observação:
+com a IA habilitada, a descrição digitada, a malha e os resultados da análise são enviados à API da Anthropic.
+
 ### Diferenças em relação ao trabalho de 2013
 
 O objetivo é replicar o trabalho, mas alguns cálculos foram corrigidos:
@@ -133,6 +156,11 @@ Opcionais: `k_step`, `k_ramp`, `k_impulse`, `sine_amp`, `tfinal`. A resposta con
 
 `GET /api/examples/` — plantas de exemplo · `GET /api/health/` — verificação de saúde.
 
+IA: `GET /api/llm/status/` (habilitado e modelo) · `POST /api/describe/` com `{"text": "..."}` →
+`{spec, validation_error, summary, derivation, assumptions, questions}` · `POST /api/tutor/` com
+`{"request": <mesmo corpo do /api/analyze/>, "messages": [{"role": "user", "content": "..."}]}` →
+`text/event-stream` com eventos `{"delta": "..."}` e, ao final, `{"done": true}`.
+
 ## Estrutura
 
 ```
@@ -148,6 +176,7 @@ backend/
       narrative.py        relatório final explicativo (Ogata / Meza)
       report.py           orquestração e serialização JSON
     examples.py           malhas de exemplo
+    llm.py                tutor e entrada em linguagem natural (Claude)
     views.py, urls.py     API REST
     tests/                testes do motor e da API
 frontend/
