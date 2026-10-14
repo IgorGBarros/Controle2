@@ -151,7 +151,7 @@ export default function App() {
           </main>
         </div>
       )}
-      <footer className="app-footer">Baseado no Trabalho de Controle II — Engenharia Mecatrônica, UNIFACS (2013).</footer>
+      <footer className="app-footer">Baseado em um trabalho de Controle II de Engenharia Mecatrônica (2013), originalmente resolvido em MATLAB/SIMULINK.</footer>
     </div>
   )
 }
