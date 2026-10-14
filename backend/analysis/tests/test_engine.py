@@ -5,7 +5,7 @@ import math
 import numpy as np
 from django.test import SimpleTestCase
 
-from analysis.engine import Params, ParseError, analyze
+from analysis.engine import InputError, Params, ParseError, analyze, analyze_tf
 from analysis.engine.parsing import parse_polynomial
 from analysis.engine.stability import critical_gain, routh_table, stable_k_intervals
 from analysis.engine.tf import TF
@@ -57,7 +57,7 @@ class Trabalho2013Tests(SimpleTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.r = items(analyze("1", "1 11.3 14 10", Params()))
+        cls.r = items(analyze_tf("1", "1 11.3 14 10", Params()))
 
     def test_no_item_errors(self):
         self.assertEqual([k for k, it in self.r.items() if it["error"]], [])
@@ -119,12 +119,86 @@ class GenericSystemsTests(SimpleTestCase):
             ("-s+1", "(s+1)^3"),
         ]:
             with self.subTest(num=num, den=den):
-                r = items(analyze(num, den, Params()))
+                r = items(analyze_tf(num, den, Params()))
                 self.assertEqual({k: it["error"] for k, it in r.items() if it["error"]}, {})
 
     def test_type1_ess(self):
         g = TF([1], [1, 6, 5, 0])
         self.assertEqual(g.system_type, 1)
-        n = items(analyze("1", "s(s+1)(s+5)", Params()))["n"]["data"]
+        n = items(analyze_tf("1", "s(s+1)(s+5)", Params()))["n"]["data"]
         self.assertEqual(n["input"], "rampa")
         self.assertAlmostEqual(n["K"], 1 / (0.05 * 0.2), places=6)
+
+
+def loop_items(spec):
+    r = analyze(spec, Params())
+    errs = {it["key"]: it["error"] for it in r["items"] if it["error"]}
+    assert not errs, errs
+    return r, items(r)
+
+
+class LoopTests(SimpleTestCase):
+    """Malhas genéricas: controlador C(s), sensor H(s), sinal da realimentação, atraso."""
+
+    def test_zpk_and_ss_match_tf(self):
+        _, tf = loop_items({"plant": {"mode": "tf", "num": "1", "den": "1 11.3 14 10"}})
+        _, zpk = loop_items({"plant": {"mode": "zpk", "zeros": "", "poles": "-10, -0.65+0.759934j, -0.65-0.759934j", "gain": 1}})
+        _, ss = loop_items({"plant": {"mode": "ss", "A": "[-11.3 -14 -10; 1 0 0; 0 1 0]", "B": "[1;0;0]", "C": "[0 0 1]", "D": "0"}})
+        for other in (zpk, ss):
+            self.assertAlmostEqual(other["j"]["data"]["critical"]["Ku"], tf["j"]["data"]["critical"]["Ku"], places=3)
+
+    def test_complex_without_conjugate_is_rejected(self):
+        with self.assertRaises(InputError):
+            analyze({"plant": {"mode": "zpk", "poles": "-1+2j", "gain": 1}}, Params())
+
+    def test_sensor_changes_closed_loop(self):
+        # T = K G/(1 + K G H): G = 10/(s(s+2)), H = 5/(s+5)
+        r, it = loop_items({"plant": {"mode": "tf", "num": "10", "den": "s(s+2)"}, "sensor": {"num": "5", "den": "s+5"}})
+        self.assertFalse(r["system"]["standard"])
+        crit = it["j"]["data"]["critical"]
+        # s^3 + 7s^2 + 10s + 50K = 0  ->  Ku = 70/50, wu = sqrt(10)
+        self.assertAlmostEqual(crit["Ku"], 1.4, places=6)
+        self.assertAlmostEqual(crit["wu"], math.sqrt(10), places=6)
+        n = it["n"]["data"]
+        self.assertEqual(n["input"], "rampa")
+        self.assertAlmostEqual(n["K"], 0.8, places=6)  # e_rampa = (1-K)/(5K)
+        self.assertTrue(n["stable"])
+
+    def test_positive_feedback(self):
+        _, it = loop_items({"plant": {"mode": "tf", "num": "1", "den": "(s+1)(s+3)"}, "feedback": "positive"})
+        lo, hi = it["j"]["data"]["stable_intervals"][0]
+        self.assertAlmostEqual(hi, 3.0, places=6)  # s^2 + 4s + 3 - K
+        self.assertFalse(it["q"]["data"]["applicable"])
+
+    def test_controller_multiplies_loop(self):
+        _, it = loop_items({"plant": {"mode": "tf", "num": "1", "den": "(s+1)(s+2)(s+5)"},
+                            "controller": {"mode": "pid", "kp": 20, "ki": 10, "kd": 5}})
+        # PID com integrador -> erro nulo ao degrau, n) trata a rampa
+        self.assertEqual(it["n"]["data"]["input"], "rampa")
+        self.assertEqual(it["i"]["data"]["system_type"], 1)
+
+    def test_delay_uses_pade(self):
+        r, it = loop_items({"plant": {"mode": "tf", "num": "1", "den": "10s+1"}, "delay": 2, "pade_order": 3})
+        self.assertEqual(len(r["system"]["open_loop"]["poles"]), 4)
+        self.assertTrue(it["p"]["data"]["applicable"])
+        self.assertGreater(it["p"]["data"]["L"], 1.0)
+
+    def test_improper_loop_rejected(self):
+        with self.assertRaises(InputError):
+            analyze({"plant": {"mode": "tf", "num": "1", "den": "s+1"}, "controller": {"num": "s^2", "den": "1"}}, Params())
+
+
+class ReportTests(SimpleTestCase):
+    def test_report_sections_and_references(self):
+        r = analyze_tf("1", "1 11.3 14 10", Params())
+        rep = r["report"]
+        self.assertEqual(len(rep["sections"]), 9)
+        self.assertEqual({ref["key"] for ref in rep["references"]}, {"ogata", "meza"})
+        text = " ".join(" ".join(s["paragraphs"] + s["bullets"]) for s in rep["sections"])
+        self.assertIn("148,2", text)          # Ku
+        self.assertIn("MEZA, 2024", text)
+        self.assertIn("OGATA, 2011", text)
+        self.assertNotIn("Não foi possível", text)
+        freq = next(s for s in rep["sections"] if s["key"] == "frequencia")
+        self.assertEqual(freq["chart"]["kind"], "nyquist")
+        self.assertGreater(len(freq["chart"]["re"]), 100)

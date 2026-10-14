@@ -60,6 +60,9 @@ def poly_latex(coeffs, var: str = "s", digits: int = 4) -> str:
 
 
 def tf_latex(num, den, digits: int = 4) -> str:
+    den = np.asarray(den, dtype=float)
+    if len(den) == 1:
+        return poly_latex(np.asarray(num, dtype=float) / den[0], digits=digits)
     return rf"\frac{{{poly_latex(num, digits=digits)}}}{{{poly_latex(den, digits=digits)}}}"
 
 

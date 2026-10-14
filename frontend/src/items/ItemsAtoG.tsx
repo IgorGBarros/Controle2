@@ -19,7 +19,7 @@ export function ItemAView({ d }: { d: ItemA }) {
       <Tex block>{d.ode}</Tex>
       <Tex block>{d.laplace}</Tex>
       <Tex block>{d.tf}</Tex>
-      <h3>Espaço de estados (forma canônica controlável)</h3>
+      <h3>Espaço de estados da planta (forma canônica controlável)</h3>
       <div className="matrices">
         <Matrix name="A" m={d.state_space.A} />
         <Matrix name="B" m={d.state_space.B} />
@@ -27,6 +27,23 @@ export function ItemAView({ d }: { d: ItemA }) {
         <Matrix name="D" m={d.state_space.D} />
       </div>
       <Tex block>{'\\dot{x} = A x + B u, \\qquad y = C x + D u'}</Tex>
+      {d.delay > 0 && d.pade && (
+        <>
+          <h3>Atraso de transporte</h3>
+          <Tex block>{`e^{-${texNum(d.delay)}s} \\approx ${d.pade}\\quad\\text{(Padé de ordem ${d.pade_order})}`}</Tex>
+        </>
+      )}
+      <h3>Malha de controle</h3>
+      <Stats
+        items={[
+          { label: 'Controlador C(s)', value: d.controller_pid ? `PID (Kp=${fmt(d.controller_pid.kp)}, Ki=${fmt(d.controller_pid.ki)}, Kd=${fmt(d.controller_pid.kd)})` : <Tex>{d.blocks.controller.latex}</Tex> },
+          { label: 'Sensor H(s)', value: <Tex>{d.blocks.sensor.latex}</Tex> },
+          { label: 'Realimentação', value: d.feedback === 'positive' ? 'positiva (+)' : 'negativa (−)' },
+        ]}
+      />
+      {d.controller_pid && <Tex block>{`C(s) = ${d.blocks.controller.latex}`}</Tex>}
+      <Tex block>{d.open_loop}</Tex>
+      <Tex block>{d.closed_loop}</Tex>
       <Matlab lines={d.matlab} />
     </>
   )
@@ -47,7 +64,7 @@ export function ItemBView({ d }: { d: ItemB }) {
       />
       <Tex block>{`G(s) = ${d.tf}`}</Tex>
       <Stats items={[{ label: 'Ganho DC  G(0)', value: fmt(d.dc_gain) }]} />
-      <h3>Resposta ao degrau unitário em malha aberta</h3>
+      <h3>Resposta ao degrau unitário da planta{d.delay > 0 ? ' (com atraso)' : ''}</h3>
       <XYChart x={d.step.t} series={d.step.series} lines={[{ key: 'step', label: 'y(t)' }]} xLabel="Tempo (s)" yLabel="Amplitude" />
       <p className="muted">Saída em regime: {d.step_behaviour}.</p>
     </>
@@ -72,7 +89,7 @@ export function DominantStats({ dom }: { dom: Dominant }) {
 export function ItemCView({ d }: { d: ItemC }) {
   return (
     <>
-      <p>Fatorando o denominador em termos de 1ª e 2ª ordem:</p>
+      <p>Fatorando o denominador {d.standard ? '' : 'da malha aberta L(s) = C(s)G(s)H(s) '}em termos de 1ª e 2ª ordem:</p>
       <Tex block>{d.factored}</Tex>
       <p>
         Cada fator quadrático é comparado com a forma padrão <Tex>{'s^2 + 2\\zeta\\omega_n s + \\omega_n^2'}</Tex>, de onde{' '}
@@ -111,6 +128,14 @@ export function ItemDView({ d }: { d: ItemD }) {
   return (
     <>
       <Note tone={d.stable ? 'ok' : 'bad'}>{d.verdict}</Note>
+      {d.blocks && (
+        <p className="muted">
+          Polos de L(s) = C·G·H vindos de cada bloco —{' '}
+          {Object.entries(d.blocks)
+            .map(([k, v]) => `${k}: ${v.length ? v.join(', ') : 'nenhum'}`)
+            .join(' · ')}
+        </p>
+      )}
       <Table
         head={['Polo', '|p| = ωn', 'ζ', 'τ = 1/σ (s)', 'Situação']}
         rows={d.poles.map((p) => [p.text, fmt(p.wn), fmt(p.zeta), fmt(p.tau), <StabilityBadge key="s" stable={p.stable} />])}
@@ -141,7 +166,7 @@ export function ItemEView({ d }: { d: ItemE }) {
   return (
     <>
       <p>
-        Fechando a malha com realimentação unitária negativa e ganho proporcional <strong>K = {fmt(d.K)}</strong>:
+        Fechando a malha com ganho <strong>K = {fmt(d.K)}</strong> em série com o controlador:
       </p>
       <Tex block>{d.tf}</Tex>
       <p>
@@ -161,7 +186,7 @@ export function ItemEView({ d }: { d: ItemE }) {
 export function ItemFView({ d }: { d: ItemF }) {
   return (
     <>
-      <p>Escrevendo G(s) na forma de Bode (constantes de tempo):</p>
+      <p>Escrevendo a malha aberta na forma de Bode (constantes de tempo):</p>
       <Tex block>{d.bode_form}</Tex>
       <p>
         Ganho de Bode: {fmt(d.bode_gain)} → {fmt(d.bode_gain_db)} dB. Inclinação inicial: {d.low_slope} dB/déc
@@ -219,21 +244,24 @@ export function ItemGView({ d }: { d: ItemG }) {
         w={d.w}
         series={d.series}
         mag={[
-          { key: 'mag', label: 'G(jω)' },
-          { key: 'mag_k', label: `K·G(jω), K=${fmt(d.K)}` },
+          { key: 'mag', label: d.standard ? 'G(jω)' : 'L(jω)' },
+          { key: 'mag_k', label: `K·${d.standard ? 'G' : 'L'}(jω), K=${fmt(d.K)}` },
         ]}
         phase={[{ key: 'phase', label: 'Fase' }]}
         magRefs={[{ y: 0, label: '0 dB' }, ...(typeof m.wpc === 'number' ? [{ x: m.wpc }] : [])]}
         phaseRefs={[{ y: -180, label: '−180°' }, ...(typeof m.wpc === 'number' ? [{ x: m.wpc, label: 'ωpc' }] : [])]}
       />
-      <h3>Margens de G(s) (K = 1)</h3>
+      {d.positive_feedback && (
+        <Note tone="warn">Realimentação positiva: as margens são calculadas para −L(s), que equivale a uma malha com realimentação negativa.</Note>
+      )}
+      <h3>Margens de {d.standard ? 'G(s)' : 'L(s)'} (K = 1)</h3>
       <MarginStats m={m} />
       {typeof m.gm === 'number' && m.closed_loop_stable && (
         <Note>
           A margem de ganho indica que a malha fechada fica no limite da estabilidade com um ganho de {fmt(m.gm)} (= Ku, ganho crítico).
         </Note>
       )}
-      <h3>Margens de K·G(s) com K = {fmt(d.K)}</h3>
+      <h3>Margens de K·{d.standard ? 'G(s)' : 'L(s)'} com K = {fmt(d.K)}</h3>
       <MarginStats m={d.margins_k} />
       <Matlab lines={d.matlab} />
     </>

@@ -1,7 +1,18 @@
 # Controle II — Análise de Sistemas
 
-Aplicação web que replica, para **qualquer planta G(s)**, todos os itens do *Trabalho de Controle II*
+Aplicação web que replica, para **qualquer malha de controle**, todos os itens do *Trabalho de Controle II*
 (Engenharia Mecatrônica — UNIFACS, 2013), originalmente resolvido no MATLAB/SIMULINK.
+
+```
+ r ──►(Σ)──► K·C(s) ──► G(s)·e^(−θs) ──┬──► y
+       ▲ ∓                             │
+       └────────── H(s) ◄──────────────┘
+```
+
+- **Planta G(s)** por função de transferência, zeros/polos/ganho ou espaço de estados (A, B, C, D), com atraso
+  de transporte opcional (aproximação de Padé de ordem 1 a 6).
+- **Controlador C(s)** por função de transferência ou ganhos PID (o ganho K dos itens multiplica C(s)).
+- **Sensor H(s)** qualquer, com **realimentação negativa ou positiva**.
 
 - **Backend:** Python + Django + Django REST Framework (cálculos com NumPy, SciPy e SymPy)
 - **Frontend:** React + TypeScript + Vite (gráficos com Recharts, fórmulas com KaTeX)
@@ -29,12 +40,50 @@ Aplicação web que replica, para **qualquer planta G(s)**, todos os itens do *T
 | q | Ziegler-Nichols 2º método (ganho crítico Ku e período Pu): P, PI, PID | — |
 | r | Média dos parâmetros dos dois métodos e simulação para degrau, rampa e senoide | SIMULINK |
 
-A planta pode ser informada no formato vetorial do MATLAB (`1 11.3 14 10`) ou como expressão em `s`
-(`(s+10)(s^2+1.3s+1)`). O exemplo padrão é a planta do trabalho original:
+Polinômios podem ser informados no formato vetorial do MATLAB (`1 11.3 14 10`) ou como expressão em `s`
+(`(s+10)(s^2+1.3s+1)`). Os itens de “malha aberta” (c, d, f, g, j, k) usam L(s) = C(s)G(s)H(s); os de malha
+fechada usam T(s) = K·C·G / (1 ∓ K·C·G·H); o erro é sempre e = r − y. Nos itens p, q e r o controlador C(s) é
+substituído pelos controladores de Ziegler-Nichols. O exemplo padrão é a planta do trabalho original:
 
 ```
 G(s) = 1 / (s³ + 11,3 s² + 14 s + 10)
 ```
+
+### Relatório final explicativo
+
+Ao final da análise, a ferramenta gera um relatório que interpreta os resultados da malha (modelagem,
+estabilidade, resposta transitória, erro em regime, resposta em frequência, lugar das raízes, PID e
+recomendações), com fundamentação e citações por capítulo de:
+
+- OGATA, Katsuhiko. *Engenharia de Controle Moderno*. 5. ed. Pearson, 2011.
+- MEZA, Magno Enrique Mendoza. *Sistemas de Controle com Python: Resposta em Frequência*. Blucher, 2024.
+
+O relatório inclui indicadores de resposta em frequência da malha fechada (largura de banda, pico e
+frequência de ressonância), o diagrama polar/Nyquist de L(jω) com o critério Z = N + P, e pode ser
+impresso ou salvo em PDF pelo navegador. Todos os números vêm do motor de cálculo; o texto é gerado a partir deles.
+
+### Recursos de IA (Claude)
+
+Dois recursos opcionais usam a API do Claude (SDK oficial `anthropic`, modelo padrão `claude-opus-5-5`):
+
+- **Descrever o sistema em linguagem natural** — o aluno escreve, por exemplo, *"motor CC com J = 0,01,
+  b = 0,1, R = 1 Ω…"* e o modelo deriva G(s), C(s) e H(s), mostrando a modelagem, as hipóteses e o que faltou
+  informar. A saída é estruturada (JSON Schema) e **validada pelo motor de cálculo** antes de preencher o
+  formulário; o aluno confere e clica em "Analisar malha".
+- **Tutor de IA** — um chat, ao final da página, que responde perguntas sobre a malha analisada. O backend
+  recalcula a análise a partir da malha (não confia em números vindos do navegador) e envia ao modelo os
+  resultados e o relatório; o tutor explica com base em Ogata e Meza, sem inventar valores. As respostas
+  chegam em streaming e as instruções e o contexto da análise ficam em cache de prompt entre as perguntas.
+
+Para habilitar, defina a chave no ambiente do backend antes de iniciar o Django:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export CLAUDE_MODEL=claude-opus-5-5   # opcional
+```
+
+Sem a chave, a ferramenta funciona normalmente e os dois painéis mostram como habilitá-los. Observação:
+com a IA habilitada, a descrição digitada, a malha e os resultados da análise são enviados à API da Anthropic.
 
 ### Diferenças em relação ao trabalho de 2013
 
@@ -84,8 +133,12 @@ cd frontend && npm run lint && npm run build
 
 ```json
 {
-  "num": "1",
-  "den": "1 11.3 14 10",
+  "plant": { "mode": "tf", "num": "1", "den": "1 11.3 14 10" },
+  "controller": { "mode": "tf", "num": "1", "den": "1" },
+  "sensor": { "num": "1", "den": "1" },
+  "feedback": "negative",
+  "delay": 0,
+  "pade_order": 2,
   "k": 10,
   "ess_target": 0.05,
   "ts_spec": 3,
@@ -95,10 +148,18 @@ cd frontend && npm run lint && npm run build
 }
 ```
 
+A planta também aceita `{"mode": "zpk", "zeros": "-3", "poles": "0, -2, -4", "gain": 8}` ou
+`{"mode": "ss", "A": "[0 1; -2 -0.5]", "B": "[0; 1]", "C": "[1 0]", "D": "0"}`; o controlador aceita
+`{"mode": "pid", "kp": 20, "ki": 10, "kd": 5}`. Por compatibilidade, `num`/`den` no nível raiz ainda são aceitos.
 Opcionais: `k_step`, `k_ramp`, `k_impulse`, `sine_amp`, `tfinal`. A resposta contém `system` e a lista
 `items` (a–r), cada um com `data` ou `error`.
 
 `GET /api/examples/` — plantas de exemplo · `GET /api/health/` — verificação de saúde.
+
+IA: `GET /api/llm/status/` (habilitado e modelo) · `POST /api/describe/` com `{"text": "..."}` →
+`{spec, validation_error, summary, derivation, assumptions, questions}` · `POST /api/tutor/` com
+`{"request": <mesmo corpo do /api/analyze/>, "messages": [{"role": "user", "content": "..."}]}` →
+`text/event-stream` com eventos `{"delta": "..."}` e, ao final, `{"done": true}`.
 
 ## Estrutura
 
@@ -107,11 +168,15 @@ backend/
   config/                 configurações do Django
   analysis/
     engine/
-      parsing.py          leitura de polinômios (vetor ou expressão em s)
+      parsing.py          leitura de polinômios, listas complexas e matrizes
+      loop.py             malha C(s), G(s), H(s), sinal, atraso (Padé)
       tf.py               função de transferência, simulação, stepinfo
       stability.py        Routh-Hurwitz, lugar das raízes, Ku
       items.py            itens a) a r)
+      narrative.py        relatório final explicativo (Ogata / Meza)
       report.py           orquestração e serialização JSON
+    examples.py           malhas de exemplo
+    llm.py                tutor e entrada em linguagem natural (Claude)
     views.py, urls.py     API REST
     tests/                testes do motor e da API
 frontend/

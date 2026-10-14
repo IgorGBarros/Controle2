@@ -92,13 +92,41 @@ export interface Margins {
   closed_loop_stable: boolean
 }
 
-export interface SystemInfo {
+export interface TfInfo {
   num: number[]
   den: number[]
   latex: string
   poles: Cx[]
   zeros: Cx[]
   stable: boolean
+}
+
+export interface BlockInfo {
+  latex: string
+  poles: Cx[]
+  zeros: Cx[]
+  unity: boolean
+}
+
+export type Feedback = 'negative' | 'positive'
+
+export interface PidGains {
+  kp: number
+  ki: number
+  kd: number
+}
+
+export interface SystemInfo extends TfInfo {
+  plant: BlockInfo
+  controller: BlockInfo
+  sensor: BlockInfo
+  controller_pid: PidGains | null
+  open_loop: TfInfo
+  closed_loop: TfInfo
+  feedback: Feedback
+  delay: number
+  pade_order: number
+  standard: boolean
 }
 
 export interface Item<T = unknown> {
@@ -108,10 +136,25 @@ export interface Item<T = unknown> {
   error: string | null
 }
 
+export interface ReportSection {
+  key: string
+  title: string
+  paragraphs: string[]
+  bullets: string[]
+  cites: string[]
+  chart: { kind: 'nyquist'; re: number[]; im: number[]; w: number[] } | null
+}
+
+export interface Report {
+  sections: ReportSection[]
+  references: { key: string; cite: string; text: string }[]
+}
+
 export interface AnalysisResult {
   system: SystemInfo
   params: AnalyzeParams
   items: Item[]
+  report: Report
 }
 
 export interface AnalyzeParams {
@@ -128,24 +171,58 @@ export interface AnalyzeParams {
   zn_include_gain: boolean
 }
 
-export interface AnalyzeRequest extends AnalyzeParams {
-  num: string
-  den: string
+export interface PlantSpec {
+  mode: 'tf' | 'zpk' | 'ss'
+  num?: string
+  den?: string
+  zeros?: string
+  poles?: string
+  gain?: number
+  A?: string
+  B?: string
+  C?: string
+  D?: string
 }
+
+export interface ControllerSpec {
+  mode: 'tf' | 'pid'
+  num?: string
+  den?: string
+  kp?: number
+  ki?: number
+  kd?: number
+}
+
+export interface LoopSpec {
+  plant: PlantSpec
+  controller?: ControllerSpec
+  sensor?: { num?: string; den?: string }
+  feedback?: Feedback
+  delay?: number
+  pade_order?: number
+}
+
+export type AnalyzeRequest = AnalyzeParams & LoopSpec
 
 export interface Example {
   name: string
-  num: string
-  den: string
   description: string
+  spec: LoopSpec
 }
 
 /* ---- itens ---- */
 
 export interface ItemA {
   order: number
-  ode_generic: string | null
-  tf_generic: string
+  standard: boolean
+  feedback: Feedback
+  blocks: { plant: BlockInfo; controller: BlockInfo; sensor: BlockInfo }
+  controller_pid: PidGains | null
+  delay: number
+  pade: string | null
+  pade_order: number
+  open_loop: string
+  closed_loop: string
   ode: string
   laplace: string
   tf: string
@@ -161,11 +238,13 @@ export interface ItemB {
   relative_degree: number
   dc_gain: Num
   tf: string
+  delay: number
   step: TimeData
   step_behaviour: string
 }
 
 export interface ItemC {
+  standard: boolean
   factored: string
   factors: (
     | { kind: 'real'; pole: number; latex: string; tau: number | null }
@@ -189,13 +268,15 @@ export interface ItemD {
   gain: number
   stable: boolean
   routh: RouthTable
+  standard: boolean
+  blocks: Record<string, string[]> | null
   verdict: string
   matlab: string[]
 }
 
 export interface ItemE {
   K: number
-  closed_loop: SystemInfo
+  closed_loop: TfInfo
   tf: string
   step: TimeData
   info: StepInfo
@@ -228,6 +309,8 @@ export interface ItemF {
 
 export interface ItemG {
   K: number
+  standard: boolean
+  positive_feedback: boolean
   w: number[]
   series: Series
   margins: Margins
@@ -239,6 +322,7 @@ export interface ItemH {
   open_loop: ResponseSet
   closed_loop: ResponseSet
   closed_loop_tf: string
+  standard: boolean
 }
 
 export interface ItemI {
@@ -249,6 +333,7 @@ export interface ItemI {
   >
   constants_unit: { Kp: Num; Kv: Num; Ka: Num }
   system_type: number
+  unity_feedback: boolean
 }
 
 export interface ItemJ {
@@ -263,6 +348,7 @@ export interface ItemJ {
   stable_intervals: Interval[]
   routh_k: { rows: { power: number; values: string[] }[]; first_column: string[] } | null
   critical: { Ku: number; wu: number; Pu: number | null } | null
+  positive_feedback: boolean
   characteristic: string
   matlab: string[]
 }
@@ -287,7 +373,8 @@ export interface ItemN {
   reason?: string
   input?: string
   target?: number
-  K?: number
+  K?: number | null
+  unity_feedback?: boolean
   limit?: string
   formula?: string
   stable?: boolean
@@ -342,6 +429,7 @@ export interface ItemP extends Partial<ControllersResponse> {
   tangent?: [number, number][]
   table?: PidRow[]
   warnings?: string[]
+  process_is_plant?: boolean
 }
 
 export interface ItemQ extends Partial<ControllersResponse> {
@@ -365,4 +453,7 @@ export interface ItemR extends Partial<ResponseSet> {
   stable?: boolean
   info?: StepInfo
   sine?: { amp: number; freq: number }
+  sensor_unity?: boolean
+  sensor_tf?: string
+  positive_feedback?: boolean
 }
