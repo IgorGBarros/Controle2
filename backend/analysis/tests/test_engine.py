@@ -186,3 +186,19 @@ class LoopTests(SimpleTestCase):
     def test_improper_loop_rejected(self):
         with self.assertRaises(InputError):
             analyze({"plant": {"mode": "tf", "num": "1", "den": "s+1"}, "controller": {"num": "s^2", "den": "1"}}, Params())
+
+
+class ReportTests(SimpleTestCase):
+    def test_report_sections_and_references(self):
+        r = analyze_tf("1", "1 11.3 14 10", Params())
+        rep = r["report"]
+        self.assertEqual(len(rep["sections"]), 9)
+        self.assertEqual({ref["key"] for ref in rep["references"]}, {"ogata", "meza"})
+        text = " ".join(" ".join(s["paragraphs"] + s["bullets"]) for s in rep["sections"])
+        self.assertIn("148,2", text)          # Ku
+        self.assertIn("MEZA, 2024", text)
+        self.assertIn("OGATA, 2011", text)
+        self.assertNotIn("Não foi possível", text)
+        freq = next(s for s in rep["sections"] if s["key"] == "frequencia")
+        self.assertEqual(freq["chart"]["kind"], "nyquist")
+        self.assertGreater(len(freq["chart"]["re"]), 100)

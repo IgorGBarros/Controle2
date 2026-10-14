@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Report } from './components/Report'
 import { SystemForm } from './components/SystemForm'
 import { Tex } from './components/Tex'
 import { Note, Section, StabilityBadge } from './components/ui'
@@ -109,12 +110,12 @@ export default function App() {
         </div>
       </header>
 
-      <SystemForm examples={examples} loading={loading} onSubmit={run} fieldErrors={fieldErrors} />
+      <div className="no-print"><SystemForm examples={examples} loading={loading} onSubmit={run} fieldErrors={fieldErrors} /></div>
       {error && <Note tone="bad">{error}</Note>}
 
       {result && (
         <div className={`layout ${loading ? 'is-loading' : ''}`}>
-          <nav className="toc" aria-label="Itens do trabalho">
+          <nav className="toc no-print" aria-label="Itens do trabalho">
             <ul>
               {result.items.map((it) => (
                 <li key={it.key}>
@@ -123,6 +124,11 @@ export default function App() {
                   </a>
                 </li>
               ))}
+              <li>
+                <a href="#relatorio">
+                  <b>★</b> Relatório final explicativo
+                </a>
+              </li>
             </ul>
           </nav>
           <main>
@@ -130,6 +136,7 @@ export default function App() {
             {result.items.map((it) => (
               <ItemSection key={it.key} item={it} />
             ))}
+            {result.report && <Report report={result.report} k={result.params.k} />}
           </main>
         </div>
       )}

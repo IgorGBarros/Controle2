@@ -49,6 +49,19 @@ substituído pelos controladores de Ziegler-Nichols. O exemplo padrão é a plan
 G(s) = 1 / (s³ + 11,3 s² + 14 s + 10)
 ```
 
+### Relatório final explicativo
+
+Ao final da análise, a ferramenta gera um relatório que interpreta os resultados da malha (modelagem,
+estabilidade, resposta transitória, erro em regime, resposta em frequência, lugar das raízes, PID e
+recomendações), com fundamentação e citações por capítulo de:
+
+- OGATA, Katsuhiko. *Engenharia de Controle Moderno*. 5. ed. Pearson, 2011.
+- MEZA, Magno Enrique Mendoza. *Sistemas de Controle com Python: Resposta em Frequência*. Blucher, 2024.
+
+O relatório inclui indicadores de resposta em frequência da malha fechada (largura de banda, pico e
+frequência de ressonância), o diagrama polar/Nyquist de L(jω) com o critério Z = N + P, e pode ser
+impresso ou salvo em PDF pelo navegador. Todos os números vêm do motor de cálculo; o texto é gerado a partir deles.
+
 ### Diferenças em relação ao trabalho de 2013
 
 O objetivo é replicar o trabalho, mas alguns cálculos foram corrigidos:
@@ -132,6 +145,7 @@ backend/
       tf.py               função de transferência, simulação, stepinfo
       stability.py        Routh-Hurwitz, lugar das raízes, Ku
       items.py            itens a) a r)
+      narrative.py        relatório final explicativo (Ogata / Meza)
       report.py           orquestração e serialização JSON
     examples.py           malhas de exemplo
     views.py, urls.py     API REST

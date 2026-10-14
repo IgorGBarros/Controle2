@@ -10,6 +10,7 @@ import numpy as np
 from . import items
 from .items import Params
 from .loop import InputError, Loop, build_loop
+from .narrative import build_report
 
 ITEMS = [
     ("a", "Modelagem e função de transferência", items.item_a),
@@ -92,6 +93,7 @@ def analyze(spec: dict, params: Params) -> dict:
         "system": system_info(lp),
         "params": params.__dict__,
         "items": [results[k] for k, _, _ in ITEMS],
+        "report": build_report(lp, {k: results[k]["data"] for k, _, _ in ITEMS}),
     }
     return sanitize(payload)
 

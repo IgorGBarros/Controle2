@@ -136,10 +136,25 @@ export interface Item<T = unknown> {
   error: string | null
 }
 
+export interface ReportSection {
+  key: string
+  title: string
+  paragraphs: string[]
+  bullets: string[]
+  cites: string[]
+  chart: { kind: 'nyquist'; re: number[]; im: number[]; w: number[] } | null
+}
+
+export interface Report {
+  sections: ReportSection[]
+  references: { key: string; cite: string; text: string }[]
+}
+
 export interface AnalysisResult {
   system: SystemInfo
   params: AnalyzeParams
   items: Item[]
+  report: Report
 }
 
 export interface AnalyzeParams {

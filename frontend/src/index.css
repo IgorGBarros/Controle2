@@ -219,3 +219,30 @@ fieldset.block legend { font-weight: 600; padding: 0 6px; color: var(--text-prim
   .toc { position: static; max-height: none; }
   .toc ul { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 }
+
+.report-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.report-head h2 { margin: 0; }
+.report-section { margin-top: 1.25rem; }
+.report-section h3 { color: var(--text-primary); margin-top: 0; }
+.report-section p, .report-section li { max-width: 80ch; }
+.report-section ul { padding-left: 1.2rem; }
+.refs li { margin-bottom: .4rem; }
+.nyquist { max-width: 520px; }
+.sw-dash { width: 16px; height: 0; border-top: 2px dashed var(--series-1); vertical-align: middle; }
+.sw-line3 { width: 16px; height: 2px; background: var(--series-3); vertical-align: middle; }
+.sw-dot2 { width: 9px; height: 9px; border-radius: 50%; background: var(--series-2); }
+
+@media print {
+  :root, :root:not([data-theme='light']) {
+    color-scheme: light;
+    --surface-0: #fff; --surface-1: #fff; --surface-2: #f2f1ed; --border: #dcdad3;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+    --grid: #e6e5e0; --axis: #a3a29c;
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  }
+  body { background: #fff; }
+  .no-print, .toc, .matlab, .app-header p { display: none !important; }
+  .layout { display: block; }
+  .section, .system-summary { border: 0; padding: 0; break-inside: auto; }
+  .report-section, figure { break-inside: avoid; }
+}
