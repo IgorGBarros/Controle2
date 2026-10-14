@@ -1,7 +1,29 @@
 # Controle II — Análise de Sistemas
 
-Aplicação web que replica, para **qualquer malha de controle**, todos os itens do *Trabalho de Controle II*
-(Engenharia Mecatrônica — UNIFACS, 2013), originalmente resolvido no MATLAB/SIMULINK.
+**Uma ferramenta web para estudar sistemas de controle clássico.** Você descreve uma malha de controle — a
+planta, o controlador, o sensor e o tipo de realimentação — e a ferramenta calcula e explica, passo a passo,
+tudo o que normalmente se faz à mão ou no MATLAB em uma disciplina de Controle: função de transferência,
+polos e estabilidade, resposta ao degrau, diagramas de Bode, margens, lugar das raízes, erro em regime,
+projeto de ganho e sintonia de PID por Ziegler-Nichols. No final, gera um relatório explicativo com base em
+livros de referência da área.
+
+![Visão geral da ferramenta](docs/img/visao-geral.png)
+
+## Por que existe
+
+A ferramenta nasceu de um trabalho de Controle II de um curso de Engenharia Mecatrônica (2013). Nele, uma
+planta de 3ª ordem foi analisada em 18 itens (a até r) com MATLAB e SIMULINK. Este projeto transforma aquele
+roteiro em uma aplicação que funciona **para qualquer sistema**: em vez de reescrever scripts para cada
+planta, basta informar a malha e todos os itens são recalculados, com gráficos, fórmulas e interpretação.
+
+Ela é útil para:
+
+- **estudantes**, que podem conferir exercícios, ver o efeito de cada parâmetro e entender o porquê de cada
+  resultado;
+- **professores**, para gerar exemplos e gabaritos rapidamente;
+- **quem precisa de uma análise rápida** de uma malha SISO sem ter MATLAB instalado.
+
+## Como funciona
 
 ```
  r ──►(Σ)──► K·C(s) ──► G(s)·e^(−θs) ──┬──► y
@@ -9,96 +31,97 @@ Aplicação web que replica, para **qualquer malha de controle**, todos os itens
        └────────── H(s) ◄──────────────┘
 ```
 
-- **Planta G(s)** por função de transferência, zeros/polos/ganho ou espaço de estados (A, B, C, D), com atraso
-  de transporte opcional (aproximação de Padé de ordem 1 a 6).
-- **Controlador C(s)** por função de transferência ou ganhos PID (o ganho K dos itens multiplica C(s)).
-- **Sensor H(s)** qualquer, com **realimentação negativa ou positiva**.
+1. **Monte a malha.** Informe a planta **G(s)** (função de transferência, zeros/polos/ganho ou espaço de
+   estados), um **atraso** opcional, o **controlador C(s)** (função de transferência ou PID), o **sensor H(s)**
+   e se a realimentação é **negativa ou positiva**. Polinômios aceitam o formato do MATLAB (`1 11.3 14 10`) ou
+   expressões em `s` (`(s+10)(s^2+1.3s+1)`).
+2. **Defina as especificações**, como o ganho K, o erro em regime desejado e os limites de tempo de acomodação
+   (Ts) e sobressinal (Mp).
+3. **Clique em "Analisar malha".** O backend calcula os 18 itens e o relatório; o frontend mostra cada item
+   com fórmulas, tabelas e gráficos interativos.
+4. **Leia o relatório final** e, se quiser, **converse com o tutor de IA** sobre os resultados.
 
-- **Backend:** Python + Django + Django REST Framework (cálculos com NumPy, SciPy e SymPy)
-- **Frontend:** React + TypeScript + Vite (gráficos com Recharts, fórmulas com KaTeX)
+![Formulário com uma malha que tem sensor na realimentação](docs/img/formulario-malha.png)
 
-## O que é calculado
+## O que a ferramenta calcula
 
-| Item | Conteúdo | Comando MATLAB equivalente |
-|---|---|---|
-| a | Equação diferencial, Laplace, função de transferência e espaço de estados | `tf`, `tf2ss` |
-| b | Coeficientes, ordem, tipo, ganho DC e resposta ao degrau em malha aberta | `step` |
-| c | Fatoração do denominador, ωn e ζ de cada fator de 2ª ordem e do par dominante | `sqrt`, `roots` |
-| d | Polos, zeros, ganho, estabilidade e tabela de Routh-Hurwitz | `tf2zp` |
-| e | Malha fechada com ganho K e resposta ao degrau | `feedback`, `step` |
-| f | Diagrama de Bode por assíntotas (frequências de canto, inclinações) × curva exata | — |
-| g | Bode com margem de ganho e de fase (para G e para K·G) | `margin` |
-| h | Saída para degrau, impulso e rampa em malha aberta e fechada, com erro em regime | `step`, `impulse`, `lsim` |
-| i | Ganho para cada entrada, constantes de erro Kp/Kv/Ka e faixa de K estável | — |
-| j | Lugar das raízes: assíntotas, centroide, separação, ângulos de partida, cruzamento jω, Routh em K | `rlocus` |
-| k | Desempenho transitório em malha aberta (tr, tp, Mp, ts) — analítico e medido | `stepinfo` |
-| l | Idem em malha fechada com controlador proporcional unitário | `stepinfo` |
-| m | Comparação malha aberta × fechada no mesmo gráfico | — |
-| n | Ganho proporcional para um erro em regime especificado (verifica a estabilidade) | — |
-| o | Ganho proporcional para Ts e Mp especificados (polos desejados, condição de ângulo e varredura de K) | — |
-| p | Ziegler-Nichols 1º método (tangente no ponto de inflexão): P, PI, PID | — |
-| q | Ziegler-Nichols 2º método (ganho crítico Ku e período Pu): P, PI, PID | — |
-| r | Média dos parâmetros dos dois métodos e simulação para degrau, rampa e senoide | SIMULINK |
+| Item | O que mostra |
+|---|---|
+| **a** | Equação diferencial, transformada de Laplace, função de transferência, espaço de estados e as funções de malha aberta L(s) e fechada T(s) |
+| **b** | Coeficientes, ordem, tipo, ganho estático e resposta ao degrau da planta |
+| **c** | Fatoração do denominador e frequência natural ωn e amortecimento ζ de cada fator de 2ª ordem |
+| **d** | Polos, zeros, estabilidade em malha aberta e tabela de Routh-Hurwitz |
+| **e** | Malha fechada com ganho K: função de transferência, polos e resposta ao degrau |
+| **f** | Diagrama de Bode por assíntotas (frequências de canto e inclinações) comparado à curva exata |
+| **g** | Bode com margem de ganho e margem de fase |
+| **h** | Respostas a degrau, impulso e rampa em malha aberta e fechada, com o erro em regime |
+| **i** | Ganho para cada tipo de entrada, constantes de erro Kp, Kv, Ka e faixa de K que mantém a malha estável |
+| **j** | Lugar das raízes: assíntotas, pontos de separação, ângulos de partida, cruzamento com o eixo jω e Routh em função de K |
+| **k / l** | Desempenho transitório (tempo de subida, de pico, de acomodação e sobressinal) em malha aberta e fechada — pela fórmula e medido na simulação |
+| **m** | Comparação entre malha aberta e fechada no mesmo gráfico |
+| **n** | Ganho proporcional para um erro em regime especificado, avisando se ele desestabiliza a malha |
+| **o** | Ganho proporcional para atender Ts e Mp: polos desejados, condição de ângulo e varredura de K |
+| **p** | Ziegler-Nichols, 1º método (curva de reação): controladores P, PI e PID |
+| **q** | Ziegler-Nichols, 2º método (ganho crítico Ku e período Pu): controladores P, PI e PID |
+| **r** | Média dos parâmetros dos dois métodos e simulação para degrau, rampa e senoide |
 
-Polinômios podem ser informados no formato vetorial do MATLAB (`1 11.3 14 10`) ou como expressão em `s`
-(`(s+10)(s^2+1.3s+1)`). Os itens de “malha aberta” (c, d, f, g, j, k) usam L(s) = C(s)G(s)H(s); os de malha
-fechada usam T(s) = K·C·G / (1 ∓ K·C·G·H); o erro é sempre e = r − y. Nos itens p, q e r o controlador C(s) é
-substituído pelos controladores de Ziegler-Nichols. O exemplo padrão é a planta do trabalho original:
-
-```
-G(s) = 1 / (s³ + 11,3 s² + 14 s + 10)
-```
+<p align="center">
+  <img src="docs/img/lugar-das-raizes.png" alt="Lugar das raízes" width="49%">
+  <img src="docs/img/ziegler-nichols.png" alt="Sintonia por Ziegler-Nichols" width="49%">
+</p>
 
 ### Relatório final explicativo
 
-Ao final da análise, a ferramenta gera um relatório que interpreta os resultados da malha (modelagem,
-estabilidade, resposta transitória, erro em regime, resposta em frequência, lugar das raízes, PID e
-recomendações), com fundamentação e citações por capítulo de:
+Depois dos itens, a ferramenta escreve um relatório que **interpreta os resultados daquela malha**: se ela é
+estável e por quê, como os polos explicam a resposta no tempo, o que as margens dizem sobre robustez, por que
+um ganho que reduz o erro pode desestabilizar o sistema, que tipo de compensador seria necessário e como
+os PIDs de Ziegler-Nichols se comportam. Inclui largura de banda, pico de ressonância e o diagrama polar
+(Nyquist) com o critério Z = N + P. O texto cita, por capítulo:
 
-- OGATA, Katsuhiko. *Engenharia de Controle Moderno*. 5. ed. Pearson, 2011.
-- MEZA, Magno Enrique Mendoza. *Sistemas de Controle com Python: Resposta em Frequência*. Blucher, 2024.
+- OGATA, Katsuhiko. *Engenharia de Controle Moderno*. 5. ed. São Paulo: Pearson, 2011.
+- MEZA, Magno Enrique Mendoza. *Sistemas de Controle com Python: Resposta em Frequência*. São Paulo: Blucher, 2024.
 
-O relatório inclui indicadores de resposta em frequência da malha fechada (largura de banda, pico e
-frequência de ressonância), o diagrama polar/Nyquist de L(jω) com o critério Z = N + P, e pode ser
-impresso ou salvo em PDF pelo navegador. Todos os números vêm do motor de cálculo; o texto é gerado a partir deles.
+O relatório pode ser impresso ou salvo em PDF pelo navegador.
 
-### Recursos de IA (Claude)
+![Seção de resposta em frequência do relatório, com o diagrama de Nyquist](docs/img/relatorio-frequencia.png)
 
-Dois recursos opcionais usam a API do Claude (SDK oficial `anthropic`, modelo padrão `claude-opus-5-5`):
+### Recursos de IA (opcionais)
 
-- **Descrever o sistema em linguagem natural** — o aluno escreve, por exemplo, *"motor CC com J = 0,01,
-  b = 0,1, R = 1 Ω…"* e o modelo deriva G(s), C(s) e H(s), mostrando a modelagem, as hipóteses e o que faltou
-  informar. A saída é estruturada (JSON Schema) e **validada pelo motor de cálculo** antes de preencher o
-  formulário; o aluno confere e clica em "Analisar malha".
-- **Tutor de IA** — um chat, ao final da página, que responde perguntas sobre a malha analisada. O backend
-  recalcula a análise a partir da malha (não confia em números vindos do navegador) e envia ao modelo os
-  resultados e o relatório; o tutor explica com base em Ogata e Meza, sem inventar valores. As respostas
-  chegam em streaming e as instruções e o contexto da análise ficam em cache de prompt entre as perguntas.
+Com uma chave da API do Claude configurada no backend, aparecem dois recursos:
 
-Para habilitar, defina a chave no ambiente do backend antes de iniciar o Django:
+- **Descrever o sistema em linguagem natural** — por exemplo, *"motor CC com J = 0,01 kg·m², b = 0,1 N·m·s,
+  R = 1 Ω e L = 0,5 H"*. O modelo deriva G(s), C(s) e H(s), mostra a modelagem e as hipóteses, e a malha só é
+  usada depois de **validada pelo motor de cálculo**. O formulário é preenchido para você conferir antes de
+  analisar.
+- **Tutor de IA** — um chat ao final da página que responde perguntas sobre a malha analisada ("por que o
+  sobressinal aumenta com K?"), explicando com base nos dois livros acima.
 
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export CLAUDE_MODEL=claude-opus-5-5   # opcional
-```
+Sem a chave, a ferramenta funciona normalmente; os painéis apenas indicam como habilitá-los.
 
-Sem a chave, a ferramenta funciona normalmente e os dois painéis mostram como habilitá-los. Observação:
-com a IA habilitada, a descrição digitada, a malha e os resultados da análise são enviados à API da Anthropic.
+### Princípio: os números vêm sempre do motor de cálculo
 
-### Diferenças em relação ao trabalho de 2013
+Todos os valores são calculados com NumPy, SciPy e SymPy (raízes, simulação, Routh, margens, lugar das raízes).
+O relatório é gerado a partir desses números, e a IA apenas os interpreta — o backend recalcula a análise e
+envia os resultados ao modelo, que é instruído a não inventar valores.
 
-O objetivo é replicar o trabalho, mas alguns cálculos foram corrigidos:
+### Diferenças em relação ao trabalho original
 
-- **Item k/l:** as fórmulas corretas são `tr = (π − β)/ωd` e `Mp = e^(−σπ/ωd)` (o original usava
-  `atan(...)/ωd` e o expoente positivo, chegando a Mp = 14,69). Os valores medidos na simulação também são exibidos.
-- **Item n:** K = 190 atende ao erro de 5%, mas a malha fechada é **instável** (Ku = 148,2). A aplicação avisa
-  e mostra o menor erro alcançável só com ação proporcional.
-- **Item p:** L e T são obtidos pela tangente exata no ponto de inflexão (no original foram estimados no gráfico).
-  Por padrão as regras são normalizadas pelo ganho estático do processo; a opção pode ser desligada para reproduzir o original.
+A ferramenta reproduz os resultados do trabalho de 2013 (ωn = 1, ζ = 0,65, Ku = 148,2, Pu = 1,679 s…), mas
+corrige alguns pontos:
+
+- **Itens k e l:** usa as fórmulas corretas `tr = (π − β)/ωd` e `Mp = e^(−σπ/ωd)` (o original obteve
+  14,69 por um erro de sinal no expoente; o valor correto é Mp ≈ 6,8%).
+- **Item n:** K = 190 atende ao erro de 5%, mas torna a malha **instável** (Ku = 148,2); a ferramenta avisa e
+  mostra o menor erro possível só com ação proporcional.
+- **Item p:** o atraso L e a constante de tempo T vêm da tangente exata no ponto de inflexão, em vez de leitura
+  no gráfico. Por padrão as regras são normalizadas pelo ganho do processo; há uma opção para reproduzir a forma
+  original.
 
 ## Como executar
 
-### Backend (porta 8000)
+Requisitos: Python 3.12+ e Node.js 20.19+ (ou 22.12+).
+
+### Backend (Django, porta 8000)
 
 ```bash
 cd backend
@@ -108,7 +131,7 @@ pip install -r requirements.txt
 python manage.py runserver
 ```
 
-### Frontend (porta 5173)
+### Frontend (React + Vite, porta 5173)
 
 ```bash
 cd frontend
@@ -117,19 +140,47 @@ npm run dev
 ```
 
 Acesse <http://localhost:5173>. Em desenvolvimento, o Vite encaminha `/api` para `http://127.0.0.1:8000`
-(altere com a variável `VITE_API_PROXY`). Para hospedar separadamente, defina `VITE_API_URL` no build do
-frontend e `CORS_ALLOWED_ORIGINS` / `DJANGO_ALLOWED_HOSTS` / `DJANGO_SECRET_KEY` / `DJANGO_DEBUG=0` no backend.
+(altere com `VITE_API_PROXY`).
+
+### Habilitar a IA (opcional)
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...      # antes de iniciar o Django
+export CLAUDE_MODEL=claude-opus-5-5      # opcional
+```
+
+Com a IA habilitada, a descrição digitada, a malha e os resultados da análise são enviados à API da Anthropic.
 
 ### Testes
 
 ```bash
-cd backend && python manage.py test     # valida os resultados contra o trabalho de 2013
+cd backend && python manage.py test          # inclui a validação contra os resultados de 2013
 cd frontend && npm run lint && npm run build
 ```
 
+### Hospedagem
+
+Para hospedar frontend e backend separadamente, defina `VITE_API_URL` no build do frontend e, no backend,
+`DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`, `DJANGO_ALLOWED_HOSTS` e `CORS_ALLOWED_ORIGINS`. A API não usa banco
+de dados.
+
+## Tecnologias
+
+- **Backend:** Python, Django, Django REST Framework, NumPy, SciPy, SymPy e o SDK `anthropic` (recursos de IA).
+- **Frontend:** React, TypeScript, Vite, Recharts (gráficos) e KaTeX (fórmulas).
+
 ## API
 
-`POST /api/analyze/`
+| Método | Rota | Descrição |
+|---|---|---|
+| `POST` | `/api/analyze/` | Analisa uma malha e devolve os itens a–r e o relatório |
+| `GET` | `/api/examples/` | Malhas de exemplo |
+| `GET` | `/api/health/` | Verificação de saúde |
+| `GET` | `/api/llm/status/` | Indica se a IA está habilitada e qual modelo |
+| `POST` | `/api/describe/` | Linguagem natural → malha (`{"text": "..."}`) |
+| `POST` | `/api/tutor/` | Tutor em streaming (`text/event-stream`) |
+
+Exemplo de corpo para `/api/analyze/`:
 
 ```json
 {
@@ -149,19 +200,12 @@ cd frontend && npm run lint && npm run build
 ```
 
 A planta também aceita `{"mode": "zpk", "zeros": "-3", "poles": "0, -2, -4", "gain": 8}` ou
-`{"mode": "ss", "A": "[0 1; -2 -0.5]", "B": "[0; 1]", "C": "[1 0]", "D": "0"}`; o controlador aceita
-`{"mode": "pid", "kp": 20, "ki": 10, "kd": 5}`. Por compatibilidade, `num`/`den` no nível raiz ainda são aceitos.
-Opcionais: `k_step`, `k_ramp`, `k_impulse`, `sine_amp`, `tfinal`. A resposta contém `system` e a lista
-`items` (a–r), cada um com `data` ou `error`.
+`{"mode": "ss", "A": "[0 1; -2 -0.5]", "B": "[0; 1]", "C": "[1 0]", "D": "0"}`, e o controlador aceita
+`{"mode": "pid", "kp": 20, "ki": 10, "kd": 5}`. Campos opcionais: `k_step`, `k_ramp`, `k_impulse`,
+`sine_amp`, `tfinal`. O tutor recebe `{"request": <mesmo corpo do /api/analyze/>, "messages": [...]}` e
+responde com eventos `{"delta": "..."}` seguidos de `{"done": true}`.
 
-`GET /api/examples/` — plantas de exemplo · `GET /api/health/` — verificação de saúde.
-
-IA: `GET /api/llm/status/` (habilitado e modelo) · `POST /api/describe/` com `{"text": "..."}` →
-`{spec, validation_error, summary, derivation, assumptions, questions}` · `POST /api/tutor/` com
-`{"request": <mesmo corpo do /api/analyze/>, "messages": [{"role": "user", "content": "..."}]}` →
-`text/event-stream` com eventos `{"delta": "..."}` e, ao final, `{"done": true}`.
-
-## Estrutura
+## Estrutura do projeto
 
 ```
 backend/
@@ -169,19 +213,27 @@ backend/
   analysis/
     engine/
       parsing.py          leitura de polinômios, listas complexas e matrizes
-      loop.py             malha C(s), G(s), H(s), sinal, atraso (Padé)
-      tf.py               função de transferência, simulação, stepinfo
-      stability.py        Routh-Hurwitz, lugar das raízes, Ku
+      loop.py             malha C(s), G(s), H(s), sinal da realimentação, atraso (Padé)
+      tf.py               função de transferência, simulação, indicadores da resposta
+      stability.py        Routh-Hurwitz, lugar das raízes, ganho crítico
       items.py            itens a) a r)
-      narrative.py        relatório final explicativo (Ogata / Meza)
+      narrative.py        relatório final explicativo
       report.py           orquestração e serialização JSON
     examples.py           malhas de exemplo
     llm.py                tutor e entrada em linguagem natural (Claude)
     views.py, urls.py     API REST
-    tests/                testes do motor e da API
+    tests/                testes do motor, da API e da IA
 frontend/
   src/
     lib/                  tipos, cliente da API, formatação
-    components/           formulário, gráficos, KaTeX, UI
+    components/           formulário, diagrama da malha, gráficos, relatório, tutor
     items/                visualização de cada item
+docs/img/                 imagens deste README
 ```
+
+## Limitações
+
+- Sistemas lineares, invariantes no tempo e SISO (uma entrada e uma saída), em tempo contínuo.
+- Ordem máxima da malha aberta: 12. O atraso é sempre aproximado por Padé.
+- A modelagem física proposta pela IA é uma sugestão: o motor confere se a malha é válida, mas não se a física
+  está correta — revise as hipóteses mostradas.
