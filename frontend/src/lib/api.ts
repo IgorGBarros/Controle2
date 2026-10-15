@@ -37,11 +37,19 @@ export async function fetchExamples(): Promise<Example[]> {
   return handle<Example[]>(await fetch(`${BASE}/api/examples/`))
 }
 
-/* ---- IA (Claude) ---- */
+/* ---- IA (Claude ou modelo local via Ollama) ---- */
 
 export interface LlmStatus {
   enabled: boolean
   model: string
+  provider?: 'anthropic' | 'ollama' | null
+  reachable?: boolean
+}
+
+/** Nome do modelo para exibir, indicando quando ele roda localmente. */
+export function modelLabel(s: LlmStatus): string {
+  if (s.provider !== 'ollama') return s.model
+  return s.reachable === false ? `${s.model} (local, via Ollama — servidor não respondeu; rode ollama serve)` : `${s.model} (local, via Ollama)`
 }
 
 export interface DescribeResult {

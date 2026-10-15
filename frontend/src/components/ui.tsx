@@ -101,3 +101,13 @@ export function StepInfoStats({ info, title }: { info: StepInfo; title?: string 
     />
   )
 }
+
+/** Aviso de IA desabilitada, com as duas formas de habilitar. */
+export function AiDisabled({ what = 'Desabilitado neste servidor' }: { what?: string }) {
+  return (
+    <>
+      {what}: defina <code>ANTHROPIC_API_KEY</code> no backend para usar o Claude, ou <code>LLM_PROVIDER=ollama</code> para usar um modelo local (por
+      exemplo, <code>qwen3.5</code>).
+    </>
+  )
+}

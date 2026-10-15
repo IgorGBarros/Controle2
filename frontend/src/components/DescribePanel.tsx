@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ApiError, describeSystem, type DescribeResult } from '../lib/api'
 import type { LoopSpec } from '../lib/types'
 import { RichText } from './RichText'
+import { AiDisabled } from './ui'
 
 const EXAMPLES = [
   'Motor CC com J = 0,01 kg·m², b = 0,1 N·m·s, Kt = Ke = 0,01, R = 1 Ω e L = 0,5 H; saída é a velocidade, com sensor de ganho 1.',
@@ -14,7 +15,7 @@ interface Props {
   onApply: (spec: LoopSpec) => void
 }
 
-/** Entrada em linguagem natural: descreve o sistema e o Claude propõe G(s), C(s) e H(s). */
+/** Entrada em linguagem natural: descreve o sistema e o modelo propõe G(s), C(s) e H(s). */
 export function DescribePanel({ enabled, onApply }: Props) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -44,7 +45,7 @@ export function DescribePanel({ enabled, onApply }: Props) {
       </summary>
       {!enabled ? (
         <p className="muted small">
-          Desabilitado neste servidor: defina <code>ANTHROPIC_API_KEY</code> no backend para usar.
+          <AiDisabled />
         </p>
       ) : (
         <div className="describe-body">
