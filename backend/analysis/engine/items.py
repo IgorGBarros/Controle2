@@ -847,6 +847,8 @@ def item_o(lp: Loop, p: Params) -> dict:
 
 # --- p) Ziegler-Nichols 1º método ----------------------------------------------------
 
+SIMULINK_N = 100.0  # coeficiente do filtro derivativo padrão do bloco PID do Simulink
+
 ZN1_RULES = [
     {"controller": "P", "Kp": "T/L", "Ti": r"\infty", "Td": "0"},
     {"controller": "PI", "Kp": r"0{,}9\,T/L", "Ti": "L/0{,}3", "Td": "0"},
@@ -972,7 +974,8 @@ def item_r(lp: Loop, p: Params, zn1: dict, zn2: dict) -> dict:
             k: (float(np.mean([r[k] for r in rows])) if rows[0][k] is not None else None) for k in ("Kp", "Ki", "Kd")
         }
     pid = avg["PID"]
-    c = pid_tf(pid["Kp"], pid["Ki"], pid["Kd"], lp.plant)
+    # mesma forma do bloco PID Controller do Simulink usado no trabalho: P + I/s + D·N·s/(s+N), N = 100
+    c = pid_tf(pid["Kp"], pid["Ki"], pid["Kd"], lp.plant, n_filter=SIMULINK_N, filtered=True)
     T = lp.with_controller(c).closed(1.0)
     t = tgrid(p, T)
     resp = response_set(T, t, kinds=("step", "ramp"), sine=(p.sine_amp, p.sine_freq))
@@ -987,6 +990,7 @@ def item_r(lp: Loop, p: Params, zn1: dict, zn2: dict) -> dict:
         "stable": T.is_stable(),
         "info": measured_info(T),
         "sine": {"amp": p.sine_amp, "freq": p.sine_freq},
+        "n_filter": SIMULINK_N,
         "sensor_unity": is_unity(lp.sensor),
         "sensor_tf": tf_latex(lp.sensor.num, lp.sensor.den),
         "positive_feedback": lp.sign > 0,

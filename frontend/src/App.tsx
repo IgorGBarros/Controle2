@@ -152,7 +152,7 @@ export default function App() {
             {result.items.map((it) => (
               <ItemSection key={it.key} item={it} />
             ))}
-            {lastRequest && <Simulator request={lastRequest} result={result} />}
+            {lastRequest && <Simulator request={lastRequest} result={result} llmEnabled={llm.enabled} />}
             {result.report && <Report report={result.report} k={result.params.k} />}
             {lastRequest && <Tutor request={lastRequest} enabled={llm.enabled} model={llm.model} />}
           </main>

@@ -87,7 +87,28 @@ depois da saturação) e métricas como IAE, sobressinal, tempo de acomodação,
 em saturação e variação total do sinal de controle. Ela também avisa quando a malha diverge ou quando a saturação
 está mascarando uma malha linear instável.
 
+O controlador segue a forma paralela do bloco **PID Controller do Simulink**: `Kp + Ki/s + Kd·N·s/(s + N)`,
+com N = 100 e a derivada sobre o erro por padrão (também é possível aplicá-la sobre a medição, o que evita o
+pico de controle na mudança de referência). O botão **"Reproduzir o diagrama do Simulink (item r)"** monta o
+mesmo diagrama do trabalho de 2013 (degrau em t = 1 s, H(s) = 1, sem saturação). Com os ganhos usados em 2013
+(Kp = 46,1129, Ki = 53,80365, Kd = 10,2266), a simulação chega ao mesmo pico de 1,49 cerca de 1,4 s após o
+degrau mostrado no Scope original — isso é verificado por um teste automatizado.
+
 ![Simulação com saturação: resposta com anti-windup comparada à resposta fixada sem anti-windup](docs/img/simulacao-windup.png)
+
+#### Assistente de sintonia com IA
+
+Dentro do simulador, o aluno descreve o objetivo ("sobressinal abaixo de 5% e o atuador não pode passar de 20")
+e o assistente:
+
+1. traduz o objetivo em especificações numéricas;
+2. escolhe a estrutura (P, PI, PD ou PID) e a variante (derivada sobre erro ou medição, anti-windup);
+3. usa como ferramentas o **simulador** e um **otimizador numérico** (Nelder-Mead minimizando IAE, ITAE ou ISE
+   com penalidade para as restrições), mudando de estratégia quando uma restrição não é atendida;
+4. entrega a recomendação com o compromisso envolvido; a sintonia é re-simulada pelo motor e pode ser aplicada
+   aos *sliders* com um clique.
+
+O Claude decide **o que** otimizar; os **números** vêm sempre do simulador e do otimizador.
 
 ### Relatório final explicativo
 
@@ -114,6 +135,8 @@ Com uma chave da API do Claude configurada no backend, aparecem dois recursos:
   analisar.
 - **Tutor de IA** — um chat ao final da página que responde perguntas sobre a malha analisada ("por que o
   sobressinal aumenta com K?"), explicando com base nos dois livros acima.
+- **Assistente de sintonia** — dentro do simulador, encontra os ganhos do controlador a partir de um objetivo
+  em linguagem natural, usando o simulador e o otimizador como ferramentas.
 
 Sem a chave, a ferramenta funciona normalmente; os painéis apenas indicam como habilitá-los.
 
@@ -199,6 +222,7 @@ de dados.
 | `GET` | `/api/llm/status/` | Indica se a IA está habilitada e qual modelo |
 | `POST` | `/api/describe/` | Linguagem natural → malha (`{"text": "..."}`) |
 | `POST` | `/api/tutor/` | Tutor em streaming (`text/event-stream`) |
+| `POST` | `/api/tune/` | Assistente de sintonia em streaming (`{"request", "sim", "goal"}`) |
 
 Exemplo de corpo para `/api/analyze/`:
 
@@ -238,10 +262,12 @@ backend/
       stability.py        Routh-Hurwitz, lugar das raízes, ganho crítico
       items.py            itens a) a r)
       simulate.py         simulação no tempo (saturação, anti-windup, ruído, atraso exato)
+      optimize.py         sintonia numérica de P/PI/PD/PID com restrições
       narrative.py        relatório final explicativo
       report.py           orquestração e serialização JSON
     examples.py           malhas de exemplo
     llm.py                tutor e entrada em linguagem natural (Claude)
+    tuning.py             assistente de sintonia (Claude + simulador + otimizador)
     views.py, urls.py     API REST
     tests/                testes do motor, da API e da IA
 frontend/

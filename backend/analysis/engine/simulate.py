@@ -35,7 +35,8 @@ class SimParams:
     kp: float = 1.0
     ki: float = 0.0
     kd: float = 0.0
-    n_filter: float = 20.0           # polo do filtro derivativo (rad/s)
+    n_filter: float = 100.0          # coeficiente do filtro derivativo N (padrão do bloco PID do Simulink)
+    derivative_on: str = "error"     # "error" (padrão do Simulink) | "measurement" (sem "chute" na referência)
     k: float = 1.0                   # ganho K que multiplica C(s) no modo "loop"
     anti_windup: str = "clamping"    # "none" | "clamping" | "back_calculation"
     ts_ctrl: float = 0.0             # período de amostragem do controlador (0 = "contínuo")
@@ -44,11 +45,13 @@ class SimParams:
     ref_type: str = "step"           # "step" | "square" | "ramp" | "sine"
     ref_amp: float = 1.0
     ref_period: float = 10.0
+    ref_t0: float = 0.0              # instante de início da referência (o bloco Step do Simulink usa 1 s)
     dist_time: float | None = None
     dist_amp: float = 0.0
     noise_std: float = 0.0
     seed: int = 1
     tfinal: float | None = None
+    fast: bool = False               # passo mais grosso (usado pelo otimizador); a planta continua exata (ZOH)
     extra: dict = field(default_factory=dict)
 
 
@@ -91,13 +94,17 @@ def _proper_controller(c: TF, n: float) -> TF:
 
 def reference(p: SimParams, t: np.ndarray) -> np.ndarray:
     a = p.ref_amp
+    tau = t - p.ref_t0
+    on = tau >= 0
     if p.ref_type == "ramp":
-        return a * t
-    if p.ref_type == "sine":
-        return a * np.sin(2 * math.pi * t / p.ref_period)
-    if p.ref_type == "square":
-        return np.where(np.floor(t / (p.ref_period / 2)) % 2 == 0, a, 0.0)
-    return np.full_like(t, a)
+        r = a * tau
+    elif p.ref_type == "sine":
+        r = a * np.sin(2 * math.pi * tau / p.ref_period)
+    elif p.ref_type == "square":
+        r = np.where(np.floor(tau / (p.ref_period / 2)) % 2 == 0, a, 0.0)
+    else:
+        r = np.full_like(t, a)
+    return np.where(on, r, 0.0)
 
 
 def simulate(lp: Loop, p: SimParams) -> dict:
@@ -106,12 +113,12 @@ def simulate(lp: Loop, p: SimParams) -> dict:
 
     # --- passo de integração e horizonte ------------------------------------
     T_ref = lp.closed(1.0) if p.controller == "loop" else lp.plant_raw
-    tfinal = float(p.tfinal or max(auto_tfinal(T_ref, lp.plant_raw) * 1.5, 10.0 + (lp.delay or 0) * 5))
+    tfinal = float(p.tfinal or max(auto_tfinal(T_ref, lp.plant_raw) * 1.5, 10.0 + (lp.delay or 0) * 5) + p.ref_t0)
     if p.ref_type in ("square", "sine"):
         tfinal = max(tfinal, 2 * p.ref_period)
     poles = np.concatenate([plant.poles(), sensor.poles()])
     fastest = max([abs(x) for x in poles if abs(x) > 1e-9] + [1e-3, p.n_filter if p.kd else 0])
-    dt = min(tfinal / 4000, 0.1 / fastest)
+    dt = tfinal / 2000 if p.fast else min(tfinal / 4000, 0.1 / fastest)
     if p.ts_ctrl and p.ts_ctrl > 0:
         dt = min(dt, p.ts_ctrl / 5)
         # o período do controlador deve ser múltiplo do passo
@@ -153,7 +160,7 @@ def simulate(lp: Loop, p: SimParams) -> dict:
     u_raw = np.zeros(n)
     integ = 0.0
     dterm = 0.0
-    prev_meas = None
+    prev_meas = 0.0  # todos os sinais são nulos antes de t = 0
     u_hold = 0.0
     u_raw_hold = 0.0
     diverged_at = None
@@ -169,8 +176,9 @@ def simulate(lp: Loop, p: SimParams) -> dict:
         if k % ctrl_every == 0:
             e = r[k] + sign * meas
             if p.controller == "pid":
-                v = sign * meas  # derivada sobre a medição (evita "chute" na mudança de referência)
-                if prev_meas is not None and p.kd:
+                # derivada sobre o erro (como o bloco PID do Simulink) ou sobre a medição (sem "chute")
+                v = e if p.derivative_on == "error" else sign * meas
+                if p.kd:
                     dterm = (dterm + p.kd * p.n_filter * (v - prev_meas)) / (1.0 + p.n_filter * h)
                 prev_meas = v
                 raw = p.kp * e + integ + dterm
@@ -248,8 +256,8 @@ def compute_metrics(t, r, y, u, u_raw, d, p: SimParams, lo, hi, dt, diverged_at)
     t_end_window = t >= (p.dist_time if p.dist_time is not None and p.dist_amp else t[-1] + 1)
     # resposta ao degrau inicial (antes de qualquer perturbação)
     if p.ref_type == "step" and abs(p.ref_amp) > 1e-12:
-        seg = ~t_end_window
-        ts_, ys_ = t[seg], y[seg]
+        seg = ~t_end_window & (t >= p.ref_t0)
+        ts_, ys_ = t[seg] - p.ref_t0, y[seg]  # tempos medidos a partir do instante do degrau
         if ts_.size > 10:
             final = float(np.mean(ys_[-max(1, ys_.size // 10):]))
             ref = final if abs(final) > 1e-9 else p.ref_amp

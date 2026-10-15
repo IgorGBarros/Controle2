@@ -37,9 +37,14 @@ def pade(theta: float, n: int) -> TF:
     return TF(num, den)
 
 
-def pid_tf(kp: float, ki: float = 0.0, kd: float = 0.0, g: TF | None = None, n_filter: float = 100.0) -> TF:
-    """C(s) = Kp + Ki/s + Kd s (derivada filtrada Kd·N·s/(s+N) se C·G ficaria imprópria)."""
-    if kd and g is not None and g.relative_degree < 1:
+def pid_tf(kp: float, ki: float = 0.0, kd: float = 0.0, g: TF | None = None, n_filter: float = 100.0,
+           filtered: bool = False) -> TF:
+    """C(s) = Kp + Ki/s + Kd s.
+
+    Com filtered=True (ou se C·G ficaria imprópria) usa a derivada filtrada Kd·N·s/(s+N),
+    que é a forma paralela do bloco PID Controller do Simulink.
+    """
+    if kd and (filtered or (g is not None and g.relative_degree < 1)):
         num = padd(pmul([kp], [1, n_filter]), [kd * n_filter, 0])
         c = TF(num, [1.0, n_filter])
         if ki:
