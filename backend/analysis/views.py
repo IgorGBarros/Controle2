@@ -8,7 +8,8 @@ from rest_framework.response import Response
 from .examples import EXAMPLES
 from .engine import InputError, Params, ParseError, analyze
 from . import llm
-from .serializers import AnalyzeSerializer, DescribeSerializer, SimulateSerializer, TuneSerializer, TutorSerializer
+from .serializers import (AnalyzeSerializer, DescribeSerializer, LearnedTuningSerializer, SimulateSerializer,
+                          TuneSerializer, TutorSerializer)
 
 
 
@@ -140,3 +141,21 @@ def tune_view(request):
     resp["Cache-Control"] = "no-cache"
     resp["X-Accel-Buffering"] = "no"
     return resp
+
+
+@api_view(["POST"])
+def learned_tuning_view(request):
+    """Sintonia sugerida pela rede neural treinada com dados gerados pela própria ferramenta."""
+    from .engine import learned
+    from .engine.loop import build_loop
+    from .engine.report import sanitize
+
+    ser = LearnedTuningSerializer(data=request.data)
+    if not ser.is_valid():
+        return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
+    spec, _ = split_request(ser.validated_data["request"])
+    try:
+        result = learned.suggest(build_loop(spec))
+    except (ParseError, InputError, ValueError) as exc:
+        return Response({"errors": {"system": [str(exc)]}}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(sanitize(result))
