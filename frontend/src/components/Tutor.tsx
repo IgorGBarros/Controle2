@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ApiError, askTutor, type ChatMessage } from '../lib/api'
+import { ApiError, askTutor, type ChatMessage, type LlmStatus } from '../lib/api'
 import type { AnalyzeRequest } from '../lib/types'
 import { ChatText } from './ChatText'
-import { AiDisabled } from './ui'
+import { Note } from './ui'
 
 const SUGGESTIONS = [
   'Explique em palavras simples se esta malha é estável e por quê.',
@@ -14,12 +14,15 @@ const SUGGESTIONS = [
 
 interface Props {
   request: AnalyzeRequest
-  enabled: boolean
+  status: Omit<LlmStatus, 'tutor'>
   model?: string
+  onRetry?: () => void
 }
 
-/** Tutor de IA: responde sobre a malha atual usando os resultados calculados pela ferramenta. */
-export function Tutor({ request, enabled, model }: Props) {
+/** Tutor de IA: responde sobre a malha atual usando os resultados calculados pela ferramenta (Ollama por padrão). */
+export function Tutor({ request, status, model, onRetry }: Props) {
+  const enabled = status.enabled
+  const offline = status.provider === 'ollama' && status.reachable === false
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -86,10 +89,23 @@ export function Tutor({ request, enabled, model }: Props) {
           </button>
         )}
       </div>
-      {!enabled ? (
+      {status.provider === undefined ? (
+        <p className="muted small">Verificando o modelo do tutor…</p>
+      ) : !enabled ? (
         <p className="muted">
-          <AiDisabled what="O tutor está desabilitado neste servidor. Para habilitar" /> Depois, reinicie o Django.
+          O tutor está configurado para o Claude (<code>TUTOR_PROVIDER=anthropic</code>), mas não há <code>ANTHROPIC_API_KEY</code> no backend. Remova{' '}
+          <code>TUTOR_PROVIDER</code> para usar o modelo local no Ollama e reinicie o Django.
         </p>
+      ) : offline ? (
+        <Note tone="warn">
+          O tutor roda num modelo local (<strong>{status.model}</strong>) pelo Ollama, que não respondeu. Instale o Ollama (ollama.com), rode{' '}
+          <code>ollama pull {status.model}</code> e deixe-o aberto (ou rode <code>ollama serve</code>).{' '}
+          {onRetry && (
+            <button type="button" className="chip" onClick={onRetry}>
+              Verificar de novo
+            </button>
+          )}
+        </Note>
       ) : (
         <>
           <p className="muted small">

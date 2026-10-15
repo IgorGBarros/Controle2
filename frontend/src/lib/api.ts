@@ -44,12 +44,13 @@ export interface LlmStatus {
   model: string
   provider?: 'anthropic' | 'ollama' | null
   reachable?: boolean
+  /** O tutor tem provedor próprio (Ollama por padrão). */
+  tutor?: Omit<LlmStatus, 'tutor'>
 }
 
 /** Nome do modelo para exibir, indicando quando ele roda localmente. */
 export function modelLabel(s: LlmStatus): string {
-  if (s.provider !== 'ollama') return s.model
-  return s.reachable === false ? `${s.model} (local, via Ollama — servidor não respondeu; rode ollama serve)` : `${s.model} (local, via Ollama)`
+  return s.provider === 'ollama' ? `${s.model} (local, via Ollama)` : s.model
 }
 
 export interface DescribeResult {

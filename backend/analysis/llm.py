@@ -5,7 +5,9 @@ interpreta resultados (tutor) ou propõe uma malha que é validada pelo motor an
 ser usada (entrada em linguagem natural).
 
 Configuração (variáveis de ambiente):
-    LLM_PROVIDER        "anthropic" (padrão) ou "ollama" (modelo local; ver ollama_client.py)
+    LLM_PROVIDER        "anthropic" (padrão) ou "ollama" (modelo local; ver ollama_client.py) para a
+                        linguagem natural e o assistente de sintonia
+    TUTOR_PROVIDER      provedor do tutor: "ollama" (padrão), "anthropic" ou "auto" (segue LLM_PROVIDER)
     ANTHROPIC_API_KEY   chave da API do Claude (habilita os recursos com o provedor anthropic)
     CLAUDE_MODEL        modelo do Claude (padrão: claude-opus-5-5)
 """
@@ -37,36 +39,53 @@ class LLMUnavailable(RuntimeError):
 
 DISABLED_MESSAGE = ("Recursos de IA desabilitados: defina ANTHROPIC_API_KEY no backend "
                     "ou use um modelo local com LLM_PROVIDER=ollama.")
+TUTOR_DISABLED_MESSAGE = ("Tutor desabilitado: TUTOR_PROVIDER=anthropic exige ANTHROPIC_API_KEY. "
+                          "Remova TUTOR_PROVIDER para usar o modelo local no Ollama.")
 
 
-def provider() -> str | None:
-    """Provedor configurado: "ollama", "anthropic" ou None (IA desabilitada)."""
+def _has_key() -> bool:
+    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+
+
+def provider(feature: str | None = None) -> str | None:
+    """Provedor de um recurso: "ollama", "anthropic" ou None (IA desabilitada).
+
+    O tutor roda no Ollama por padrão (TUTOR_PROVIDER); os demais recursos seguem LLM_PROVIDER.
+    """
+    if feature == "tutor":
+        choice = os.environ.get("TUTOR_PROVIDER", "ollama").strip().lower()
+        if choice == "ollama":
+            return "ollama"
+        if choice in {"anthropic", "claude"}:
+            return "anthropic" if _has_key() else None
     if os.environ.get("LLM_PROVIDER", "").strip().lower() == "ollama":
         return "ollama"
-    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
-        return "anthropic"
-    return None
+    return "anthropic" if _has_key() else None
 
 
-def enabled() -> bool:
-    return provider() is not None
+def enabled(feature: str | None = None) -> bool:
+    return provider(feature) is not None
 
 
-def current_model() -> str:
-    return ollama.model() if provider() == "ollama" else MODEL
+def current_model(feature: str | None = None) -> str:
+    return ollama.model() if provider(feature) == "ollama" else MODEL
 
 
 def status() -> dict:
-    prov = provider()
-    out = {"enabled": prov is not None, "provider": prov, "model": current_model()}
-    if prov == "ollama":
-        out["reachable"] = ollama.reachable()
-    return out
+    def one(feature):
+        prov = provider(feature)
+        out = {"enabled": prov is not None, "provider": prov, "model": current_model(feature)}
+        if prov == "ollama":
+            out["reachable"] = ollama.reachable()
+        return out
+
+    general, tutor = one(None), one("tutor")
+    return {**general, "tutor": tutor}
 
 
 def get_client() -> anthropic.Anthropic:
     global _client
-    if provider() != "anthropic":
+    if not _has_key():
         raise LLMUnavailable(DISABLED_MESSAGE)
     if _client is None:
         _client = anthropic.Anthropic()
@@ -175,7 +194,7 @@ def tutor_stream(spec: dict, params: Params, messages: list[dict]) -> Iterator[s
     """Gera a resposta do tutor em pedaços de texto (streaming)."""
     result = cached_analysis(spec, params)
     context = analysis_context(result)
-    if provider() == "ollama":
+    if provider("tutor") == "ollama":
         history = [{"role": "user", "content": f"{context}\n\n{messages[0]['content']}"}]
         history += [{"role": m["role"], "content": m["content"]} for m in messages[1:]]
         yield from ollama.chat_stream(history, TUTOR_SYSTEM)

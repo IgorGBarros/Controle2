@@ -84,9 +84,13 @@ class DescribeTests(SimpleTestCase):
 
 
 class DisabledTests(SimpleTestCase):
-    @mock.patch.dict("os.environ", {}, clear=True)
+    @mock.patch.dict("os.environ", {"OLLAMA_HOST": "127.0.0.1:9"}, clear=True)
     def test_status_and_endpoints_without_key(self):
-        self.assertFalse(self.client.get("/api/llm/status/").json()["enabled"])
+        status = self.client.get("/api/llm/status/").json()
+        self.assertFalse(status["enabled"])
+        # o tutor usa o Ollama por padrão; sem servidor no ar, responde 503 com instruções
+        self.assertEqual(status["tutor"]["provider"], "ollama")
+        self.assertFalse(status["tutor"]["reachable"])
         resp = self.client.post("/api/describe/", {"text": "motor CC"}, content_type="application/json")
         self.assertEqual(resp.status_code, 503)
         resp = self.client.post("/api/tutor/", {"request": {"num": "1", "den": "s+1"}, "messages": [{"role": "user", "content": "oi"}]},
@@ -94,7 +98,7 @@ class DisabledTests(SimpleTestCase):
         self.assertEqual(resp.status_code, 503)
 
 
-@mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test"})
+@mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test", "TUTOR_PROVIDER": "anthropic"})
 class TutorTests(SimpleTestCase):
     REQ = {"plant": {"mode": "tf", "num": "1", "den": "1 11.3 14 10"}}
 

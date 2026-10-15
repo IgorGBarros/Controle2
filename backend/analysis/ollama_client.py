@@ -57,7 +57,12 @@ def _post(path: str, body: dict, timeout: float | None = None):
             raise OllamaError(f"Modelo '{model()}' não encontrado no Ollama. Rode: ollama pull {model()}") from exc
         raise OllamaError(f"Erro do Ollama ({exc.code}): {detail or exc.reason}") from exc
     except (urllib.error.URLError, ConnectionError, TimeoutError) as exc:
-        raise OllamaError(f"Não foi possível conectar ao Ollama em {host()}. Ele está rodando (ollama serve)?") from exc
+        raise OllamaError(unreachable_message()) from exc
+
+
+def unreachable_message() -> str:
+    return (f"Não foi possível conectar ao Ollama em {host()}. Verifique se ele está rodando (ollama serve) "
+            f"e se o modelo foi baixado (ollama pull {model()}).")
 
 
 def tools_schema(tools: list[dict]) -> list[dict]:
