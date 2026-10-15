@@ -307,6 +307,9 @@ details.matlab pre { background: var(--surface-2); padding: var(--space-3); bord
 .ai-badge { font-size: .68rem; font-weight: 700; letter-spacing: .04em; color: var(--accent-ink); background: var(--accent); border-radius: 5px; padding: 2px 6px; }
 .chat { display: grid; gap: var(--space-3); margin: var(--space-3) 0; max-height: 600px; overflow-y: auto; padding-right: 4px; }
 .suggestions { display: flex; flex-wrap: wrap; gap: 6px; }
+.suggestion-groups { display: grid; gap: var(--space-3); }
+.suggestion-groups > div { display: grid; gap: 6px; }
+.bubble.assistant .tuner-tool, .bubble.assistant .tuner-final { margin: var(--space-2) 0; }
 .suggestions .chip { text-align: left; }
 .bubble { border-radius: var(--radius); padding: var(--space-2) var(--space-3); max-width: 88%; font-size: .92rem; }
 .bubble p { margin: .3rem 0; }

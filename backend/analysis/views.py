@@ -8,8 +8,8 @@ from rest_framework.response import Response
 from .examples import EXAMPLES
 from .engine import InputError, Params, ParseError, analyze
 from . import llm
-from .serializers import (AnalyzeSerializer, DescribeSerializer, LearnedTuningSerializer, SimulateSerializer,
-                          TuneSerializer, TutorSerializer)
+from .serializers import (AnalyzeSerializer, AssistantSerializer, DescribeSerializer, LearnedTuningSerializer,
+                          SimulateSerializer)
 
 
 
@@ -73,35 +73,6 @@ def describe_view(request):
 
 
 @api_view(["POST"])
-def tutor_view(request):
-    ser = TutorSerializer(data=request.data)
-    if not ser.is_valid():
-        return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
-    unavailable = feature_unavailable("tutor")
-    if unavailable:
-        return unavailable
-    spec, params = split_request(ser.validated_data["request"])
-    messages = ser.validated_data["messages"]
-    try:
-        llm.cached_analysis(spec, params)  # valida a malha antes de abrir o stream
-    except (ParseError, InputError, ValueError) as exc:
-        return Response({"errors": {"system": [str(exc)]}}, status=status.HTTP_400_BAD_REQUEST)
-
-    def events():
-        try:
-            for chunk in llm.tutor_stream(spec, params, messages):
-                yield f"data: {json.dumps({'delta': chunk}, ensure_ascii=False)}\n\n"
-            yield f"data: {json.dumps({'done': True})}\n\n"
-        except Exception as exc:  # noqa: BLE001
-            yield f"data: {json.dumps({'error': llm.friendly_error(exc)}, ensure_ascii=False)}\n\n"
-
-    resp = StreamingHttpResponse(events(), content_type="text/event-stream")
-    resp["Cache-Control"] = "no-cache"
-    resp["X-Accel-Buffering"] = "no"
-    return resp
-
-
-@api_view(["POST"])
 def simulate_view(request):
     from .engine.loop import build_loop
     from .engine.report import sanitize
@@ -120,39 +91,6 @@ def simulate_view(request):
 
 
 @api_view(["POST"])
-def tune_view(request):
-    from . import tuning
-    from .engine.report import sanitize
-    from .engine.simulate import SimParams
-
-    ser = TuneSerializer(data=request.data)
-    if not ser.is_valid():
-        return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
-    unavailable = feature_unavailable("tuning")
-    if unavailable:
-        return unavailable
-    spec, params = split_request(ser.validated_data["request"])
-    base = SimParams(**ser.validated_data["sim"])
-    try:
-        llm.cached_analysis(spec, params)
-    except (ParseError, InputError, ValueError) as exc:
-        return Response({"errors": {"system": [str(exc)]}}, status=status.HTTP_400_BAD_REQUEST)
-
-    def events():
-        try:
-            for ev in tuning.tune_stream(spec, params, base, ser.validated_data["goal"]):
-                yield f"data: {json.dumps(sanitize(ev), ensure_ascii=False)}\n\n"
-        except Exception as exc:  # noqa: BLE001
-            yield f"data: {json.dumps({'type': 'error', 'error': llm.friendly_error(exc)}, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
-
-    resp = StreamingHttpResponse(events(), content_type="text/event-stream")
-    resp["Cache-Control"] = "no-cache"
-    resp["X-Accel-Buffering"] = "no"
-    return resp
-
-
-@api_view(["POST"])
 def learned_tuning_view(request):
     """Sintonia sugerida pela rede neural treinada com dados gerados pela própria ferramenta."""
     from .engine import learned
@@ -168,3 +106,37 @@ def learned_tuning_view(request):
     except (ParseError, InputError, ValueError) as exc:
         return Response({"errors": {"system": [str(exc)]}}, status=status.HTTP_400_BAD_REQUEST)
     return Response(sanitize(result))
+
+
+@api_view(["POST"])
+def assistant_view(request):
+    """Assistente IA (tutor + sintonia) em streaming SSE."""
+    from . import assistant
+    from .engine.report import sanitize
+    from .engine.simulate import SimParams
+
+    ser = AssistantSerializer(data=request.data)
+    if not ser.is_valid():
+        return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
+    unavailable = feature_unavailable("assistant")
+    if unavailable:
+        return unavailable
+    spec, params = split_request(ser.validated_data["request"])
+    base = SimParams(**ser.validated_data.get("sim", {}))
+    try:
+        llm.cached_analysis(spec, params)  # valida a malha antes de abrir o stream
+    except (ParseError, InputError, ValueError) as exc:
+        return Response({"errors": {"system": [str(exc)]}}, status=status.HTTP_400_BAD_REQUEST)
+
+    def events():
+        try:
+            for ev in assistant.assistant_stream(spec, params, base, ser.validated_data["messages"]):
+                yield f"data: {json.dumps(sanitize(ev), ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"data: {json.dumps({'type': 'error', 'error': llm.friendly_error(exc)}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    resp = StreamingHttpResponse(events(), content_type="text/event-stream")
+    resp["Cache-Control"] = "no-cache"
+    resp["X-Accel-Buffering"] = "no"
+    return resp

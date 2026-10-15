@@ -1,18 +1,23 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ApiError, simulateLoop, type LlmStatus, type SimParams, type SimResult } from '../lib/api'
+import { ApiError, simulateLoop, type SimParams, type SimResult } from '../lib/api'
 import { fmt } from '../lib/format'
 import type { AnalysisResult, AnalyzeRequest } from '../lib/types'
 import { XYChart } from './Charts'
 import { SimAnimation } from './SimAnimation'
 import { LearnedTuning } from './LearnedTuning'
-import { TuningAssistant } from './TuningAssistant'
+import type { Applied } from './Assistant'
+import { TUNE_GOALS } from '../lib/defaults'
 import { Note, Stats } from './ui'
 
 interface Props {
   request: AnalyzeRequest
   result: AnalysisResult
-  tuningStatus: Omit<LlmStatus, 'tutor' | 'tuning'>
-  onRetryLlm?: () => void
+  /** Informa o cenário configurado (o Assistente IA simula nele). */
+  onScenario?: (p: SimParams) => void
+  /** Sintonia vinda do Assistente IA para aplicar aos controles. */
+  applyRequest?: { gains: Applied; nonce: number } | null
+  /** Abre o Assistente IA com um pedido de sintonia. */
+  onAskAssistant?: (text: string) => void
 }
 
 function initialGains(result: AnalysisResult): { kp: number; ki: number; kd: number; source: string } {
@@ -69,7 +74,7 @@ function Num({ label, value, onChange, suffix, optional }: { label: ReactNode; v
 const sec = (v: number | null | undefined) => (v === null || v === undefined ? 'não acomodou' : `${fmt(v)} s`)
 
 /** Simulação no tempo com saturação, anti-windup, perturbação, ruído e controlador discreto. */
-export function Simulator({ request, result, tuningStatus, onRetryLlm }: Props) {
+export function Simulator({ request, result, onScenario, applyRequest, onAskAssistant }: Props) {
   const init = useMemo(() => initialGains(result), [result])
   const [sim, setSim] = useState<SimParams>(() => ({
     controller: 'pid',
@@ -151,6 +156,17 @@ export function Simulator({ request, result, tuningStatus, onRetryLlm }: Props) 
     }),
     [sim, satOn, distOn],
   )
+
+  useEffect(() => {
+    onScenario?.(effective)
+  }, [effective, onScenario])
+
+  // Sintonia aplicada a partir do Assistente IA.
+  const [applyKey, setApplyKey] = useState(applyRequest?.nonce ?? null)
+  if (applyRequest && applyRequest.nonce !== applyKey) {
+    setApplyKey(applyRequest.nonce)
+    applyTuning(applyRequest.gains)
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -377,7 +393,7 @@ export function Simulator({ request, result, tuningStatus, onRetryLlm }: Props) 
         </div>
       </div>
       <LearnedTuning request={request} onApply={applyTuning} />
-      <TuningAssistant request={request} sim={effective} status={tuningStatus} onRetry={onRetryLlm} onApply={applyTuning} />
+      {onAskAssistant && <AskAssistant onAsk={onAskAssistant} />}
     </section>
   )
 }
@@ -402,4 +418,31 @@ function describePin(p: SimParams): string {
   const parts = p.controller === 'pid' ? [`Kp=${fmt(p.kp, 3)}`, `Ki=${fmt(p.ki, 3)}`, `Kd=${fmt(p.kd, 3)}`] : [`K=${fmt(p.k, 3)}`]
   if (p.u_max !== null) parts.push(p.anti_windup === 'none' ? 'sem anti-windup' : 'com anti-windup')
   return parts.join(', ')
+}
+
+/** Atalho para pedir uma sintonia ao Assistente IA, no cenário configurado acima. */
+function AskAssistant({ onAsk }: { onAsk: (text: string) => void }) {
+  const [goal, setGoal] = useState('')
+  return (
+    <div className="tuner">
+      <h3>
+        <span className="ai-badge">IA</span> Pedir uma sintonia ao Assistente IA
+      </h3>
+      <p className="muted small">
+        Descreva o que você quer da resposta. O Assistente IA usa o simulador (com a saturação, a perturbação e o ruído configurados acima), o otimizador e
+        a rede neural, explica a escolha e propõe ganhos que você aplica aqui com um clique.
+      </p>
+      <textarea rows={2} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Ex.: sobressinal abaixo de 5% sem saturar o atuador" />
+      <div className="describe-actions">
+        <button type="button" className="primary" onClick={() => onAsk(goal)} disabled={goal.trim().length < 3}>
+          Perguntar ao assistente
+        </button>
+        {TUNE_GOALS.map((g) => (
+          <button key={g} type="button" className="chip" onClick={() => onAsk(g)} title={g}>
+            {g.length > 48 ? `${g.slice(0, 46)}…` : g}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
