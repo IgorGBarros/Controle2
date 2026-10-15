@@ -221,43 +221,57 @@ export function SystemForm({ examples, loading, onSubmit, fieldErrors, llmEnable
         </fieldset>
       </div>
 
-      <div className="params">
-        {paramField('k', 'Ganho K (itens e, g, i)')}
-        {paramField('ess_target', 'Erro em regime (item n)', { scale: 100, suffix: '%' })}
-        {paramField('ts_spec', 'Ts máximo (item o)', { suffix: 's' })}
-        {paramField('mp_spec', 'Mp máximo (item o)', { suffix: '%' })}
-      </div>
-
-      <details className="advanced">
-        <summary>Parâmetros avançados</summary>
+      <fieldset className="block specs">
+        <legend>Especificações</legend>
         <div className="params">
-          {paramField('k_step', 'K para degrau (item i)', { optional: true })}
-          {paramField('k_ramp', 'K para rampa (item i)', { optional: true })}
-          {paramField('k_impulse', 'K para impulso (item i)', { optional: true })}
-          {paramField('sine_freq', 'Frequência da senoide (item r)', { suffix: 'rad/s' })}
-          {paramField('sine_amp', 'Amplitude da senoide (item r)')}
-          {paramField('tfinal', 'Tempo de simulação', { optional: true, suffix: 's' })}
-          <label className="field check">
-            <input type="checkbox" checked={params.zn_include_gain} onChange={(e) => setParam('zn_include_gain', e.target.checked)} />
-            <span>Ziegler-Nichols (1º método): normalizar pelo ganho do processo</span>
-          </label>
+          {paramField('k', 'Ganho K (itens e, g, i)')}
+          {paramField('ess_target', 'Erro em regime (item n)', { scale: 100, suffix: '%' })}
+          {paramField('ts_spec', 'Ts máximo (item o)', { suffix: 's' })}
+          {paramField('mp_spec', 'Mp máximo (item o)', { suffix: '%' })}
         </div>
-      </details>
-
-      <div className="actions">
-        <button type="submit" className="primary" disabled={loading}>
-          {loading ? 'Calculando…' : 'Analisar malha'}
-        </button>
-        {examples.length > 0 && (
-          <div className="examples">
-            <span>Exemplos:</span>
-            {examples.map((ex) => (
-              <button type="button" key={ex.name} className="chip" title={ex.description} onClick={() => loadExample(ex)} disabled={loading}>
-                {ex.name}
-              </button>
-            ))}
+        <details className="advanced">
+          <summary>Parâmetros avançados</summary>
+          <div className="params">
+            {paramField('k_step', 'K para degrau (item i)', { optional: true })}
+            {paramField('k_ramp', 'K para rampa (item i)', { optional: true })}
+            {paramField('k_impulse', 'K para impulso (item i)', { optional: true })}
+            {paramField('sine_freq', 'Frequência da senoide (item r)', { suffix: 'rad/s' })}
+            {paramField('sine_amp', 'Amplitude da senoide (item r)')}
+            {paramField('tfinal', 'Tempo de simulação', { optional: true, suffix: 's' })}
+            <label className="field check">
+              <input type="checkbox" checked={params.zn_include_gain} onChange={(e) => setParam('zn_include_gain', e.target.checked)} />
+              <span>Ziegler-Nichols (1º método): normalizar pelo ganho do processo</span>
+            </label>
           </div>
+        </details>
+      </fieldset>
+
+      <div className="action-bar">
+        {examples.length > 0 && (
+          <label className="field example-select">
+            <span>Carregar exemplo</span>
+            <select
+              value=""
+              onChange={(e) => {
+                const ex = examples.find((x) => x.name === e.target.value)
+                if (ex) loadExample(ex)
+              }}
+              disabled={loading}
+            >
+              <option value="" disabled>
+                Escolha uma malha pronta…
+              </option>
+              {examples.map((ex) => (
+                <option key={ex.name} value={ex.name}>
+                  {ex.name} — {ex.description}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
+        <button type="submit" className="primary big" disabled={loading}>
+          {loading ? 'Calculando…' : 'Analisar malha →'}
+        </button>
       </div>
     </form>
     </>

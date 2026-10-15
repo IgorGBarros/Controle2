@@ -3,6 +3,7 @@ import { ApiError, simulateLoop, type SimParams, type SimResult } from '../lib/a
 import { fmt } from '../lib/format'
 import type { AnalysisResult, AnalyzeRequest } from '../lib/types'
 import { XYChart } from './Charts'
+import { SimAnimation } from './SimAnimation'
 import { TuningAssistant } from './TuningAssistant'
 import { Note, Stats } from './ui'
 
@@ -97,6 +98,7 @@ export function Simulator({ request, result, llmEnabled }: Props) {
   const [busy, setBusy] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const [satOn, setSatOn] = useState(false)
+  const [cursor, setCursor] = useState<number | null>(null)
   const [distOn, setDistOn] = useState(false)
 
   // Uma nova análise redefine os ganhos iniciais do simulador.
@@ -157,6 +159,7 @@ export function Simulator({ request, result, llmEnabled }: Props) {
       simulateLoop(request, effective, ctrl.signal)
         .then((d) => {
           setData(d)
+          setCursor(null)
           setError(null)
         })
         .catch((e) => {
@@ -190,7 +193,9 @@ export function Simulator({ request, result, llmEnabled }: Props) {
         sensor e controlador discreto. O atraso de transporte é simulado de forma exata. Ganhos iniciais: {init.source}.
       </p>
 
-      <div className="sim-grid">
+      <div className="sim-layout">
+        <aside className="sim-controls">
+      <div className="sim-stack">
         <fieldset className="block">
           <legend>Controlador</legend>
           <div className="tabs" role="radiogroup" aria-label="Controlador da simulação">
@@ -297,6 +302,8 @@ export function Simulator({ request, result, llmEnabled }: Props) {
         </fieldset>
       </div>
 
+        </aside>
+        <div className="sim-main">
       {error && <Note tone="bad">{error}</Note>}
       {data && ySeries && (
         <div className={busy ? 'is-loading' : ''}>
@@ -314,6 +321,7 @@ export function Simulator({ request, result, llmEnabled }: Props) {
               </button>
             )}
           </div>
+          <SimAnimation data={data} uMin={effective.u_min} uMax={effective.u_max} onTime={setCursor} />
           <XYChart
             x={data.t}
             series={ySeries}
@@ -327,7 +335,7 @@ export function Simulator({ request, result, llmEnabled }: Props) {
             yLabel="Saída"
             title="Saída da planta"
             height={320}
-            refs={effective.dist_time !== null ? [{ x: effective.dist_time, label: 'perturbação' }] : []}
+            refs={[...(effective.dist_time !== null ? [{ x: effective.dist_time, label: 'perturbação' }] : []), ...(cursor !== null ? [{ x: cursor }] : [])]}
           />
           <XYChart
             x={data.t}
@@ -340,7 +348,7 @@ export function Simulator({ request, result, llmEnabled }: Props) {
             yLabel="Controle"
             title="Sinal de controle"
             height={240}
-            refs={effective.u_max !== null ? [{ y: effective.u_max, label: 'u máx' }, { y: effective.u_min ?? -10, label: 'u mín' }] : []}
+            refs={[...(effective.u_max !== null ? [{ y: effective.u_max, label: 'u máx' }, { y: effective.u_min ?? -10, label: 'u mín' }] : []), ...(cursor !== null ? [{ x: cursor }] : [])]}
           />
           {m && !m.diverged && (
             <Stats
@@ -364,6 +372,8 @@ export function Simulator({ request, result, llmEnabled }: Props) {
           </p>
         </div>
       )}
+        </div>
+      </div>
       <TuningAssistant request={request} sim={effective} enabled={llmEnabled} onApply={applyTuning} />
     </section>
   )
