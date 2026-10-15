@@ -131,7 +131,7 @@ def closed_formula(lp: Loop, k_sym: str = "K") -> str:
     h = "H(s)" if not is_unity(lp.sensor) else ""
     kc = rf"{k_sym}\,{c}" if k_sym else c
     fwd = f"{kc}G(s)".strip() or "G(s)"
-    return rf"rac{{{fwd}}}{{1 {fb_sign_tex(lp)} {fwd}{h}}}"
+    return rf"\frac{{{fwd}}}{{1 {fb_sign_tex(lp)} {fwd}{h}}}"
 
 
 def response_set(T: TF, t: np.ndarray, kinds=("step", "ramp", "impulse"), sine: tuple | None = None) -> dict:

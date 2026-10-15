@@ -31,6 +31,9 @@ Ela é útil para:
        └────────── H(s) ◄──────────────┘
 ```
 
+A interface é dividida em abas: **Malha** (montagem do sistema), **Análise** (os 18 itens, agrupados por tema
+e mostrados um de cada vez), **Simulação** (simulação no tempo com animação), **Relatório** e **Tutor IA**.
+
 1. **Monte a malha.** Informe a planta **G(s)** (função de transferência, zeros/polos/ganho ou espaço de
    estados), um **atraso** opcional, o **controlador C(s)** (função de transferência ou PID), o **sensor H(s)**
    e se a realimentação é **negativa ou positiva**. Polinômios aceitam o formato do MATLAB (`1 11.3 14 10`) ou
@@ -42,7 +45,7 @@ Ela é útil para:
 4. **Simule** a malha no tempo, ajustando os ganhos do PID e acrescentando saturação, perturbação e ruído.
 5. **Leia o relatório final** e, se quiser, **converse com o tutor de IA** sobre os resultados.
 
-![Formulário com uma malha que tem sensor na realimentação](docs/img/formulario-malha.png)
+![Aba Análise: itens agrupados por tema, um de cada vez](docs/img/analise.png)
 
 ## O que a ferramenta calcula
 
@@ -67,8 +70,7 @@ Ela é útil para:
 | **r** | Média dos parâmetros dos dois métodos e simulação para degrau, rampa e senoide |
 
 <p align="center">
-  <img src="docs/img/lugar-das-raizes.png" alt="Lugar das raízes" width="49%">
-  <img src="docs/img/ziegler-nichols.png" alt="Sintonia por Ziegler-Nichols" width="49%">
+  <img src="docs/img/ziegler-nichols.png" alt="Sintonia por Ziegler-Nichols" width="60%">
 </p>
 
 ### Simulação no tempo
@@ -80,6 +82,13 @@ A seção **s) Simulação no tempo** integra a malha passo a passo e mostra o q
 - **controlador discreto**, com período de amostragem próprio;
 - **atraso de transporte exato**, simulado com um buffer de amostras em vez da aproximação de Padé;
 - referência em degrau, onda quadrada, rampa ou senoide.
+
+A simulação pode ser **animada**: um botão de reprodução (com velocidade ajustável e barra de tempo) mostra a
+malha evoluindo em uma vista física — **tanque** (nível = saída, válvula = sinal de controle), **carrinho**
+(posição e força) ou **motor** (ângulo e torque) —, com medidores de r, y, erro e u, indicação de saturação e um
+cursor que percorre os gráficos.
+
+![Simulação animada: tanque respondendo a uma perturbação de carga](docs/img/simulacao-animacao.png)
 
 Os ganhos Kp, Ki e Kd são ajustados por *sliders* e o gráfico é recalculado na hora. Dá para fixar uma resposta e
 compará-la com outra, por exemplo com e sem anti-windup. A simulação mostra a saída, o sinal de controle (antes e

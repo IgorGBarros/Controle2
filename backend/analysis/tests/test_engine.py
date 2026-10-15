@@ -202,3 +202,15 @@ class ReportTests(SimpleTestCase):
         freq = next(s for s in rep["sections"] if s["key"] == "frequencia")
         self.assertEqual(freq["chart"]["kind"], "nyquist")
         self.assertGreater(len(freq["chart"]["re"]), 100)
+
+
+class OutputHygieneTests(SimpleTestCase):
+    def test_no_control_characters_in_payload(self):
+        """Regressão: um \\f virou caractere de controle e quebrou o LaTeX do item a."""
+        import json
+        import re
+        r = analyze({"plant": {"mode": "tf", "num": "1", "den": "s+1"}, "sensor": {"num": "2", "den": "1"}}, Params())
+        text = json.dumps(r, ensure_ascii=False)
+        self.assertIsNone(re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", text))
+        a = next(it for it in r["items"] if it["key"] == "a")["data"]
+        self.assertIn("\\frac{", a["closed_loop"])
