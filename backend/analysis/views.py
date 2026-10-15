@@ -44,7 +44,7 @@ def split_request(data: dict) -> tuple[dict, Params]:
 
 @api_view(["GET"])
 def llm_status(request):
-    return Response({"enabled": llm.enabled(), "model": llm.MODEL})
+    return Response(llm.status())
 
 
 @api_view(["POST"])
@@ -69,7 +69,7 @@ def tutor_view(request):
     if not ser.is_valid():
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
     if not llm.enabled():
-        return Response({"errors": {"llm": [str(llm.LLMUnavailable("Recursos de IA desabilitados: defina ANTHROPIC_API_KEY no backend."))]}},
+        return Response({"errors": {"llm": [llm.DISABLED_MESSAGE]}},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE)
     spec, params = split_request(ser.validated_data["request"])
     messages = ser.validated_data["messages"]
@@ -120,7 +120,7 @@ def tune_view(request):
     if not ser.is_valid():
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
     if not llm.enabled():
-        return Response({"errors": {"llm": ["Recursos de IA desabilitados: defina ANTHROPIC_API_KEY no backend."]}},
+        return Response({"errors": {"llm": [llm.DISABLED_MESSAGE]}},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE)
     spec, params = split_request(ser.validated_data["request"])
     base = SimParams(**ser.validated_data["sim"])

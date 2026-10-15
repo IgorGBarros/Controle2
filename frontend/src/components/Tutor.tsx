@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, askTutor, type ChatMessage } from '../lib/api'
 import type { AnalyzeRequest } from '../lib/types'
 import { ChatText } from './ChatText'
+import { AiDisabled } from './ui'
 
 const SUGGESTIONS = [
   'Explique em palavras simples se esta malha é estável e por quê.',
@@ -87,8 +88,7 @@ export function Tutor({ request, enabled, model }: Props) {
       </div>
       {!enabled ? (
         <p className="muted">
-          O tutor usa o Claude e está desabilitado neste servidor. Para habilitar, defina a variável <code>ANTHROPIC_API_KEY</code> no backend e reinicie o
-          Django.
+          <AiDisabled what="O tutor está desabilitado neste servidor. Para habilitar" /> Depois, reinicie o Django.
         </p>
       ) : (
         <>

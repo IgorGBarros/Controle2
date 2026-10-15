@@ -1,12 +1,13 @@
-"""Integração com o Claude: tutor e entrada em linguagem natural.
+"""Integração com LLM (Claude ou modelo local via Ollama): tutor e entrada em linguagem natural.
 
 Princípio: os números vêm sempre do motor de cálculo (NumPy/SciPy). O modelo só
 interpreta resultados (tutor) ou propõe uma malha que é validada pelo motor antes de
 ser usada (entrada em linguagem natural).
 
 Configuração (variáveis de ambiente):
-    ANTHROPIC_API_KEY   chave da API (obrigatória para habilitar os recursos)
-    CLAUDE_MODEL        modelo (padrão: claude-opus-5-5)
+    LLM_PROVIDER        "anthropic" (padrão) ou "ollama" (modelo local; ver ollama_client.py)
+    ANTHROPIC_API_KEY   chave da API do Claude (habilita os recursos com o provedor anthropic)
+    CLAUDE_MODEL        modelo do Claude (padrão: claude-opus-5-5)
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from typing import Iterator
 
 import anthropic
 
+from . import ollama_client as ollama
 from .engine import InputError, Params, analyze
 from .engine.loop import build_loop
 
@@ -33,21 +35,46 @@ class LLMUnavailable(RuntimeError):
     pass
 
 
+DISABLED_MESSAGE = ("Recursos de IA desabilitados: defina ANTHROPIC_API_KEY no backend "
+                    "ou use um modelo local com LLM_PROVIDER=ollama.")
+
+
+def provider() -> str | None:
+    """Provedor configurado: "ollama", "anthropic" ou None (IA desabilitada)."""
+    if os.environ.get("LLM_PROVIDER", "").strip().lower() == "ollama":
+        return "ollama"
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return "anthropic"
+    return None
+
+
 def enabled() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+    return provider() is not None
+
+
+def current_model() -> str:
+    return ollama.model() if provider() == "ollama" else MODEL
+
+
+def status() -> dict:
+    prov = provider()
+    out = {"enabled": prov is not None, "provider": prov, "model": current_model()}
+    if prov == "ollama":
+        out["reachable"] = ollama.reachable()
+    return out
 
 
 def get_client() -> anthropic.Anthropic:
     global _client
-    if not enabled():
-        raise LLMUnavailable("Recursos de IA desabilitados: defina ANTHROPIC_API_KEY no backend.")
+    if provider() != "anthropic":
+        raise LLMUnavailable(DISABLED_MESSAGE)
     if _client is None:
         _client = anthropic.Anthropic()
     return _client
 
 
 def friendly_error(exc: Exception) -> str:
-    if isinstance(exc, LLMUnavailable):
+    if isinstance(exc, (LLMUnavailable, ollama.OllamaError)):
         return str(exc)
     if isinstance(exc, anthropic.AuthenticationError):
         return "Chave da API inválida (ANTHROPIC_API_KEY)."
@@ -146,9 +173,14 @@ essa malha na ferramenta para obter os números.
 
 def tutor_stream(spec: dict, params: Params, messages: list[dict]) -> Iterator[str]:
     """Gera a resposta do tutor em pedaços de texto (streaming)."""
-    client = get_client()
     result = cached_analysis(spec, params)
     context = analysis_context(result)
+    if provider() == "ollama":
+        history = [{"role": "user", "content": f"{context}\n\n{messages[0]['content']}"}]
+        history += [{"role": m["role"], "content": m["content"]} for m in messages[1:]]
+        yield from ollama.chat_stream(history, TUTOR_SYSTEM)
+        return
+    client = get_client()
     # A primeira mensagem do usuário carrega o contexto (estável durante a conversa) com
     # cache_control; o system prompt fixo também fica em cache.
     first = {
@@ -243,6 +275,13 @@ DESCRIBE_SCHEMA = {
 
 def normalize_spec(raw: dict) -> dict:
     """Converte a saída do modelo no formato aceito por build_loop (somente os campos do modo)."""
+    try:
+        return _normalize_spec(raw)
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise InputError("O modelo devolveu uma malha incompleta. Tente reformular a descrição.") from exc
+
+
+def _normalize_spec(raw: dict) -> dict:
     p = raw["plant"]
     mode = p["mode"]
     plant = {"mode": mode}
@@ -265,8 +304,48 @@ def normalize_spec(raw: dict) -> dict:
     }
 
 
+def _describe_ollama(text: str) -> tuple[str, str]:
+    msg = ollama.chat([{"role": "user", "content": text}], DESCRIBE_SYSTEM, fmt=DESCRIBE_SCHEMA)
+    if msg.get("done_reason") == "length":
+        raise InputError("A resposta do modelo foi interrompida. Tente uma descrição mais curta.")
+    return msg.get("content") or "", ollama.model()
+
+
 def describe(text: str) -> dict:
     """Linguagem natural → malha validada pelo motor de cálculo."""
+    if provider() == "ollama":
+        payload, model_name = _describe_ollama(text)
+    else:
+        payload, model_name = _describe_claude(text)
+    if not payload:
+        raise InputError("O modelo não retornou uma malha.")
+    try:
+        raw = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise InputError("O modelo não devolveu um JSON válido. Tente novamente.") from exc
+    spec = normalize_spec(raw)
+    validation_error = None
+    try:
+        build_loop(spec)  # o motor valida a malha proposta pelo modelo
+    except InputError as exc:
+        validation_error = str(exc)
+
+    def strings(key):
+        v = raw.get(key)
+        return [str(x) for x in v] if isinstance(v, list) else []
+
+    return {
+        "spec": spec,
+        "validation_error": validation_error,
+        "summary": str(raw.get("summary") or ""),
+        "derivation": strings("derivation"),
+        "assumptions": strings("assumptions"),
+        "questions": strings("questions"),
+        "model": model_name,
+    }
+
+
+def _describe_claude(text: str) -> tuple[str, str]:
     client = get_client()
     response = client.beta.messages.create(
         model=MODEL,
@@ -282,21 +361,4 @@ def describe(text: str) -> dict:
     if response.stop_reason == "max_tokens":
         raise InputError("A resposta do modelo foi interrompida. Tente uma descrição mais curta.")
     payload = next((b.text for b in response.content if b.type == "text"), None)
-    if not payload:
-        raise InputError("O modelo não retornou uma malha.")
-    raw = json.loads(payload)
-    spec = normalize_spec(raw)
-    validation_error = None
-    try:
-        build_loop(spec)  # o motor valida a malha proposta pelo modelo
-    except InputError as exc:
-        validation_error = str(exc)
-    return {
-        "spec": spec,
-        "validation_error": validation_error,
-        "summary": raw["summary"],
-        "derivation": raw["derivation"],
-        "assumptions": raw["assumptions"],
-        "questions": raw["questions"],
-        "model": response.model,
-    }
+    return payload or "", response.model

@@ -1,6 +1,6 @@
-"""Assistente de sintonia com IA.
+"""Assistente de sintonia com IA (Claude ou modelo local via Ollama).
 
-O Claude traduz o objetivo do aluno em especificações, escolhe a estrutura do controlador
+O modelo traduz o objetivo do aluno em especificações, escolhe a estrutura do controlador
 e usa duas ferramentas do motor de cálculo — o simulador e o otimizador numérico — até
 chegar a uma sintonia. Os números vêm sempre das ferramentas; a sintonia final é
 re-simulada pelo motor antes de ser mostrada.
@@ -13,6 +13,7 @@ from dataclasses import replace
 from typing import Iterator
 
 from . import llm
+from . import ollama_client as ollama
 from .engine import Params
 from .engine.loop import Loop, build_loop
 from .engine.optimize import STRUCTURES, Constraints, optimize_pid, violations
@@ -165,69 +166,160 @@ def run_tool(lp: Loop, base: SimParams, name: str, args: dict) -> dict:
     raise ValueError(f"Ferramenta desconhecida: {name}")
 
 
-def tune_stream(spec: dict, params: Params, base: SimParams, goal: str) -> Iterator[dict]:
-    """Executa o laço de ferramentas e emite eventos de progresso."""
-    client = llm.get_client()
-    lp = build_loop(spec)
-    analysis = llm.cached_analysis(spec, params)
-    messages = [{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": f"<malha_e_cenario>\n{scenario_text(lp, base, analysis)}\n</malha_e_cenario>"},
-            {"type": "text", "text": f"Objetivo do aluno: {goal}"},
-        ],
-    }]
-    tool_calls = 0
-    best = None  # melhor tentativa viável, caso o modelo não finalize
-    yield {"type": "start"}
-    for _turn in range(MAX_TURNS):
-        response = client.beta.messages.create(
+class _ClaudeSession:
+    """Uma conversa com ferramentas na API do Claude (ferramentas estritas)."""
+
+    def __init__(self, context: str, goal: str):
+        self.client = llm.get_client()
+        self.messages = [{
+            "role": "user",
+            "content": [{"type": "text", "text": context}, {"type": "text", "text": f"Objetivo do aluno: {goal}"}],
+        }]
+        self._last = None
+
+    def step(self) -> tuple[list[str], list[tuple[str, str, dict]], str | None]:
+        response = self.client.beta.messages.create(
             model=llm.MODEL,
             max_tokens=16000,
             system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
             tools=TOOLS,
-            messages=messages,
+            messages=self.messages,
             output_config={"effort": "medium"},
             betas=[llm.FALLBACK_BETA],
             fallbacks="default",
         )
-        for block in response.content:
-            if block.type == "text" and block.text.strip():
-                yield {"type": "text", "text": block.text}
+        self._last = response
+        texts = [b.text for b in response.content if b.type == "text" and b.text.strip()]
         if response.stop_reason == "refusal":
-            yield {"type": "error", "error": "O modelo não conseguiu atender a este pedido. Reformule o objetivo."}
-            return
+            return texts, [], "O modelo não conseguiu atender a este pedido. Reformule o objetivo."
         if response.stop_reason == "max_tokens":
-            yield {"type": "error", "error": "A resposta do modelo foi interrompida por tamanho."}
+            return texts, [], "A resposta do modelo foi interrompida por tamanho."
+        uses = [(b.id, b.name, dict(b.input)) for b in response.content if b.type == "tool_use"]
+        return texts, uses, None
+
+    def add_results(self, results: list[tuple[str, str, str, bool]]) -> None:
+        self.messages.append({"role": "assistant", "content": self._last.content})
+        self.messages.append({"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": id_, "content": content, **({"is_error": True} if err else {})}
+            for id_, _name, content, err in results
+        ]})
+
+
+class _OllamaSession:
+    """A mesma conversa com um modelo local no Ollama (chamada de ferramentas nativa)."""
+
+    def __init__(self, context: str, goal: str):
+        self.messages = [{"role": "user", "content": f"{context}\n\nObjetivo do aluno: {goal}"}]
+        self._last = None
+
+    def step(self) -> tuple[list[str], list[tuple[str, str, dict]], str | None]:
+        msg = ollama.chat(self.messages, SYSTEM, tools=TOOLS)
+        calls = msg.get("tool_calls") or []
+        self._last = {"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls}
+        text = (msg.get("content") or "").strip()
+        texts = [text] if text else []
+        if msg.get("done_reason") == "length" and not calls:
+            return texts, [], "A resposta do modelo foi interrompida por tamanho."
+        uses = []
+        for i, call in enumerate(calls):
+            fn = call.get("function") or {}
+            args = fn.get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+            uses.append((f"call_{len(self.messages)}_{i}", str(fn.get("name", "")), args if isinstance(args, dict) else {}))
+        return texts, uses, None
+
+    def add_results(self, results: list[tuple[str, str, str, bool]]) -> None:
+        self.messages.append(self._last)
+        for _id, name, content, _err in results:
+            self.messages.append({"role": "tool", "tool_name": name, "content": content})
+
+
+def _num(v, default: float) -> float:
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return default
+    return x if x == x and abs(x) != float("inf") else default
+
+
+def _choice(v, options, default):
+    return v if v in options else default
+
+
+def coerce_args(name: str, args: dict, base: SimParams) -> dict:
+    """Completa e saneia os argumentos de uma ferramenta.
+
+    O Claude usa ferramentas estritas e sempre respeita o schema; modelos locais podem omitir
+    campos ou trocar tipos, então os valores ausentes vêm do cenário atual.
+    """
+    a = dict(args)
+    aw = _choice(a.get("anti_windup"), ("none", "clamping", "back_calculation"), base.anti_windup)
+    dv = _choice(a.get("derivative_on"), ("error", "measurement"), base.derivative_on)
+    gains = {k: max(0.0, _num(a.get(k), getattr(base, k))) for k in ("kp", "ki", "kd")}
+    if name == "simular":
+        return {**gains, "anti_windup": aw, "derivative_on": dv}
+    if name == "otimizar":
+        out = {"estrutura": _choice(a.get("estrutura"), STRUCTURES, "PID"),
+               "criterio": _choice(a.get("criterio"), ("iae", "itae", "ise"), "iae"),
+               "anti_windup": aw, "derivative_on": dv}
+        for k in ("sobressinal_max", "acomodacao_max", "u_max_abs", "erro_final_max"):
+            out[k] = _num(a.get(k), -1.0)
+        for k in ("kp", "ki", "kd"):
+            out[f"{k}_inicial"] = max(0.0, _num(a.get(f"{k}_inicial"), getattr(base, k)))
+        return out
+    if name == "finalizar":
+        return {**gains, "estrutura": _choice(a.get("estrutura"), STRUCTURES, "PID"), "anti_windup": aw,
+                "derivative_on": dv, "especificacao": str(a.get("especificacao") or ""),
+                "resumo": str(a.get("resumo") or ""), "compromissos": str(a.get("compromissos") or ""),
+                "atendeu": bool(a.get("atendeu", False))}
+    return a
+
+
+def tune_stream(spec: dict, params: Params, base: SimParams, goal: str) -> Iterator[dict]:
+    """Executa o laço de ferramentas e emite eventos de progresso."""
+    lp = build_loop(spec)
+    analysis = llm.cached_analysis(spec, params)
+    context = f"<malha_e_cenario>\n{scenario_text(lp, base, analysis)}\n</malha_e_cenario>"
+    session = _OllamaSession(context, goal) if llm.provider() == "ollama" else _ClaudeSession(context, goal)
+    tool_calls = 0
+    best = None  # melhor tentativa viável, caso o modelo não finalize
+    yield {"type": "start"}
+    for _turn in range(MAX_TURNS):
+        texts, uses, error = session.step()
+        for t in texts:
+            yield {"type": "text", "text": t}
+        if error:
+            yield {"type": "error", "error": error}
             return
-        uses = [b for b in response.content if b.type == "tool_use"]
         if not uses:
             break
-        messages.append({"role": "assistant", "content": response.content})
         results = []
-        for use in uses:
-            if use.name == "finalizar":
-                yield final_event(lp, base, dict(use.input))
+        for id_, name, raw_args in uses:
+            if name == "finalizar":
+                yield final_event(lp, base, coerce_args(name, raw_args, base))
                 return
             tool_calls += 1
             if tool_calls > MAX_TOOL_CALLS:
-                results.append({"type": "tool_result", "tool_use_id": use.id, "is_error": True,
-                                "content": "Limite de chamadas atingido. Chame finalizar com a melhor sintonia encontrada."})
+                results.append((id_, name, "Limite de chamadas atingido. Chame finalizar com a melhor sintonia encontrada.", True))
                 continue
             try:
-                out = run_tool(lp, base, use.name, dict(use.input))
+                args = coerce_args(name, raw_args, base)
+                out = run_tool(lp, base, name, args)
                 ok = not violations(out["metricas"], Constraints()) and not out["metricas"].get("diverged")
-                if use.name == "otimizar" and not out.get("violacoes") or use.name == "simular" and ok:
+                if name == "otimizar" and not out.get("violacoes") or name == "simular" and ok:
                     cand = {"gains": out["ganhos"], "iae": out["metricas"].get("iae") or 1e9,
-                            "anti_windup": use.input.get("anti_windup"), "derivative_on": use.input.get("derivative_on")}
+                            "anti_windup": args["anti_windup"], "derivative_on": args["derivative_on"]}
                     if best is None or cand["iae"] < best["iae"]:
                         best = cand
-                yield {"type": "tool", "name": use.name, "input": dict(use.input), "result": out}
-                results.append({"type": "tool_result", "tool_use_id": use.id,
-                                "content": json.dumps(out, ensure_ascii=False, default=str)})
+                yield {"type": "tool", "name": name, "input": args, "result": out}
+                results.append((id_, name, json.dumps(out, ensure_ascii=False, default=str), False))
             except Exception as exc:  # noqa: BLE001 - o erro volta para o modelo corrigir
-                results.append({"type": "tool_result", "tool_use_id": use.id, "is_error": True, "content": f"Erro: {exc}"})
-        messages.append({"role": "user", "content": results})
+                results.append((id_, name, f"Erro: {exc}", True))
+        session.add_results(results)
     # o modelo parou sem finalizar: entrega a melhor tentativa viável
     if best:
         yield final_event(lp, base, {

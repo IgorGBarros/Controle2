@@ -3,7 +3,7 @@ import { ApiError, tuneController, type SimMetrics, type SimParams, type TuneEve
 import { fmt } from '../lib/format'
 import type { AnalyzeRequest } from '../lib/types'
 import { ChatText } from './ChatText'
-import { Note, Stats, Table } from './ui'
+import { AiDisabled, Note, Stats, Table } from './ui'
 
 const GOALS = [
   'Quero sobressinal abaixo de 5%, mesmo que a resposta fique mais lenta.',
@@ -28,7 +28,7 @@ type LogItem =
 const sec = (v: number | null | undefined) => (v === null || v === undefined ? 'não acomodou' : `${fmt(v)} s`)
 const ESTRUTURA_DESC: Record<string, string> = { P: 'P', PI: 'PI', PD: 'PD', PID: 'PID' }
 
-/** Assistente de sintonia: o Claude define a especificação e usa o simulador e o otimizador como ferramentas. */
+/** Assistente de sintonia: o modelo (Claude ou local) define a especificação e usa o simulador e o otimizador como ferramentas. */
 export function TuningAssistant({ request, sim, enabled, onApply }: Props) {
   const [goal, setGoal] = useState('')
   const [busy, setBusy] = useState(false)
@@ -77,7 +77,7 @@ export function TuningAssistant({ request, sim, enabled, onApply }: Props) {
       </h3>
       {!enabled ? (
         <p className="muted small">
-          Desabilitado neste servidor: defina <code>ANTHROPIC_API_KEY</code> no backend para usar.
+          <AiDisabled />
         </p>
       ) : (
         <>

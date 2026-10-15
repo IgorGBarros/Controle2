@@ -192,7 +192,7 @@ O relatório pode ser impresso ou salvo em PDF pelo navegador.
 
 ### Recursos de IA (opcionais)
 
-Com uma chave da API do Claude configurada no backend, aparecem três recursos:
+Com uma chave da API do Claude, ou com um modelo local no Ollama (veja [Habilitar a IA](#habilitar-a-ia-opcional)), aparecem três recursos:
 
 - **Descrever o sistema em linguagem natural** — por exemplo, *"motor CC com J = 0,01 kg·m², b = 0,1 N·m·s,
   R = 1 Ω e L = 0,5 H"*. O modelo deriva G(s), C(s) e H(s), mostra a modelagem e as hipóteses, e a malha só é
@@ -259,6 +259,30 @@ export CLAUDE_MODEL=claude-opus-5-5      # opcional
 
 Com a IA habilitada, a descrição digitada, a malha e os resultados da análise são enviados à API da Anthropic.
 
+#### Alternativa: modelo local com Ollama (qwen3.5)
+
+Os três recursos de IA (tutor, linguagem natural e assistente de sintonia) também funcionam com um modelo que
+roda na sua máquina, sem chave de API e sem enviar dados para fora:
+
+```bash
+ollama pull qwen3.5                      # uma vez
+ollama serve                             # se o Ollama ainda não estiver rodando
+
+export LLM_PROVIDER=ollama               # antes de iniciar o Django
+export OLLAMA_MODEL=qwen3.5              # opcional (padrão: qwen3.5); qualquer modelo com suporte a ferramentas
+export OLLAMA_HOST=http://localhost:11434  # opcional
+export OLLAMA_NUM_CTX=32768              # opcional: janela de contexto (a análise ocupa ~9 mil tokens)
+export OLLAMA_THINK=0                    # opcional: 1 liga o modo de raciocínio (melhor, porém mais lento)
+```
+
+O backend usa a API nativa do Ollama (`/api/chat`) só com a biblioteca padrão do Python. O tutor usa
+streaming; a linguagem natural usa saída estruturada por JSON Schema (`format`); o assistente de sintonia usa
+a chamada de ferramentas nativa. Como modelos locais nem sempre respeitam o schema à risca, os argumentos
+das ferramentas são completados e saneados antes de chegar ao simulador e ao otimizador. O princípio não
+muda: **os números vêm sempre do motor de cálculo**, e a malha proposta pelo modelo é validada antes de ser
+usada. Um modelo pequeno explica e escolhe estratégias pior que o Claude, mas não consegue inventar métricas.
+A interface mostra qual modelo está em uso e avisa se o servidor do Ollama não responder.
+
 ### Testes
 
 ```bash
@@ -274,7 +298,7 @@ de dados.
 
 ## Tecnologias
 
-- **Backend:** Python, Django, Django REST Framework, NumPy, SciPy, SymPy, o SDK `anthropic` (recursos de IA) e
+- **Backend:** Python, Django, Django REST Framework, NumPy, SciPy, SymPy, o SDK `anthropic` ou um modelo local via Ollama (recursos de IA) e
   scikit-learn (apenas para treinar a rede de sintonia).
 - **Frontend:** React, TypeScript, Vite, Recharts (gráficos) e KaTeX (fórmulas).
 
@@ -286,7 +310,7 @@ de dados.
 | `POST` | `/api/simulate/` | Simulação no tempo (`{"request": <corpo do /api/analyze/>, "sim": {...}}`) |
 | `GET` | `/api/examples/` | Malhas de exemplo |
 | `GET` | `/api/health/` | Verificação de saúde |
-| `GET` | `/api/llm/status/` | Indica se a IA está habilitada e qual modelo |
+| `GET` | `/api/llm/status/` | Indica se a IA está habilitada, o provedor (`anthropic` ou `ollama`) e o modelo |
 | `POST` | `/api/describe/` | Linguagem natural → malha (`{"text": "..."}`) |
 | `POST` | `/api/tutor/` | Tutor em streaming (`text/event-stream`) |
 | `POST` | `/api/tune/` | Assistente de sintonia em streaming (`{"request", "sim", "goal"}`) |
@@ -335,7 +359,8 @@ backend/
       narrative.py        relatório final explicativo
       report.py           orquestração e serialização JSON
     examples.py           malhas de exemplo
-    llm.py                tutor e entrada em linguagem natural (Claude)
+    llm.py                tutor e entrada em linguagem natural (Claude ou Ollama)
+    ollama_client.py      cliente da API do Ollama para modelos locais (ex.: qwen3.5)
     tuning.py             assistente de sintonia (Claude + simulador + otimizador)
     ml/                   geração de dados, treino e o modelo exportado (model/sintonia_mlp.json)
     management/commands/  gerar_dataset_sintonia, treinar_sintonia

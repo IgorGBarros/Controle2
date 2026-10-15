@@ -7,7 +7,7 @@ import { Tutor } from './components/Tutor'
 import { Note, StabilityBadge } from './components/ui'
 import { ItemAView, ItemBView, ItemCView, ItemDView, ItemEView, ItemFView, ItemGView } from './items/ItemsAtoG'
 import { ItemHView, ItemIView, ItemJView, ItemMView, ItemNView, ItemOView, ItemPView, ItemQView, ItemRView, TransientView } from './items/ItemsHtoR'
-import { analyze, ApiError, fetchExamples, fetchLlmStatus, type LlmStatus } from './lib/api'
+import { analyze, ApiError, fetchExamples, fetchLlmStatus, modelLabel, type LlmStatus } from './lib/api'
 import { DEFAULT_LOOP, DEFAULT_PARAMS } from './lib/defaults'
 import { fmtCx } from './lib/format'
 import type { AnalysisResult, AnalyzeRequest, Example, Item } from './lib/types'
@@ -283,7 +283,7 @@ export default function App() {
         {result && activeTab === 'relatorio' && result.report && <Report report={result.report} k={result.params.k} />}
         {result && lastRequest && (
           <div hidden={activeTab !== 'tutor'}>
-            <Tutor request={lastRequest} enabled={llm.enabled} model={llm.model} />
+            <Tutor request={lastRequest} enabled={llm.enabled} model={modelLabel(llm)} />
           </div>
         )}
       </div>
