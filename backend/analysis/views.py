@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from .examples import EXAMPLES
 from .engine import InputError, Params, ParseError, analyze
 from . import llm
-from .serializers import AnalyzeSerializer, DescribeSerializer, TutorSerializer
+from .serializers import AnalyzeSerializer, DescribeSerializer, SimulateSerializer, TutorSerializer
 
 
 
@@ -89,3 +89,21 @@ def tutor_view(request):
     resp["Cache-Control"] = "no-cache"
     resp["X-Accel-Buffering"] = "no"
     return resp
+
+
+@api_view(["POST"])
+def simulate_view(request):
+    from .engine.loop import build_loop
+    from .engine.report import sanitize
+    from .engine.simulate import SimParams, simulate
+
+    ser = SimulateSerializer(data=request.data)
+    if not ser.is_valid():
+        return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
+    spec, _ = split_request(ser.validated_data["request"])
+    try:
+        lp = build_loop(spec)
+        result = simulate(lp, SimParams(**ser.validated_data["sim"]))
+    except (ParseError, InputError, ValueError) as exc:
+        return Response({"errors": {"system": [str(exc)]}}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(sanitize(result))

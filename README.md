@@ -39,7 +39,8 @@ Ela é útil para:
    (Ts) e sobressinal (Mp).
 3. **Clique em "Analisar malha".** O backend calcula os 18 itens e o relatório; o frontend mostra cada item
    com fórmulas, tabelas e gráficos interativos.
-4. **Leia o relatório final** e, se quiser, **converse com o tutor de IA** sobre os resultados.
+4. **Simule** a malha no tempo, ajustando os ganhos do PID e acrescentando saturação, perturbação e ruído.
+5. **Leia o relatório final** e, se quiser, **converse com o tutor de IA** sobre os resultados.
 
 ![Formulário com uma malha que tem sensor na realimentação](docs/img/formulario-malha.png)
 
@@ -69,6 +70,24 @@ Ela é útil para:
   <img src="docs/img/lugar-das-raizes.png" alt="Lugar das raízes" width="49%">
   <img src="docs/img/ziegler-nichols.png" alt="Sintonia por Ziegler-Nichols" width="49%">
 </p>
+
+### Simulação no tempo
+
+A seção **s) Simulação no tempo** integra a malha passo a passo e mostra o que a análise linear não mostra:
+
+- **saturação do atuador** e **anti-windup** (integração condicional ou *back-calculation*);
+- **perturbação de carga** na entrada da planta e **ruído no sensor**;
+- **controlador discreto**, com período de amostragem próprio;
+- **atraso de transporte exato**, simulado com um buffer de amostras em vez da aproximação de Padé;
+- referência em degrau, onda quadrada, rampa ou senoide.
+
+Os ganhos Kp, Ki e Kd são ajustados por *sliders* e o gráfico é recalculado na hora. Dá para fixar uma resposta e
+compará-la com outra, por exemplo com e sem anti-windup. A simulação mostra a saída, o sinal de controle (antes e
+depois da saturação) e métricas como IAE, sobressinal, tempo de acomodação, recuperação após a perturbação, tempo
+em saturação e variação total do sinal de controle. Ela também avisa quando a malha diverge ou quando a saturação
+está mascarando uma malha linear instável.
+
+![Simulação com saturação: resposta com anti-windup comparada à resposta fixada sem anti-windup](docs/img/simulacao-windup.png)
 
 ### Relatório final explicativo
 
@@ -174,6 +193,7 @@ de dados.
 | Método | Rota | Descrição |
 |---|---|---|
 | `POST` | `/api/analyze/` | Analisa uma malha e devolve os itens a–r e o relatório |
+| `POST` | `/api/simulate/` | Simulação no tempo (`{"request": <corpo do /api/analyze/>, "sim": {...}}`) |
 | `GET` | `/api/examples/` | Malhas de exemplo |
 | `GET` | `/api/health/` | Verificação de saúde |
 | `GET` | `/api/llm/status/` | Indica se a IA está habilitada e qual modelo |
@@ -217,6 +237,7 @@ backend/
       tf.py               função de transferência, simulação, indicadores da resposta
       stability.py        Routh-Hurwitz, lugar das raízes, ganho crítico
       items.py            itens a) a r)
+      simulate.py         simulação no tempo (saturação, anti-windup, ruído, atraso exato)
       narrative.py        relatório final explicativo
       report.py           orquestração e serialização JSON
     examples.py           malhas de exemplo
@@ -233,7 +254,8 @@ docs/img/                 imagens deste README
 
 ## Limitações
 
-- Sistemas lineares, invariantes no tempo e SISO (uma entrada e uma saída), em tempo contínuo.
-- Ordem máxima da malha aberta: 12. O atraso é sempre aproximado por Padé.
+- Plantas lineares, invariantes no tempo e SISO (uma entrada e uma saída). As não linearidades (saturação,
+  ruído) existem apenas na simulação no tempo.
+- Ordem máxima da malha aberta: 12. Nos itens a–r o atraso é aproximado por Padé; na simulação ele é exato.
 - A modelagem física proposta pela IA é uma sugestão: o motor confere se a malha é válida, mas não se a física
   está correta — revise as hipóteses mostradas.
