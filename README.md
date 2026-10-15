@@ -9,6 +9,8 @@ livros de referência da área.
 
 ![Visão geral da ferramenta](docs/img/visao-geral.png)
 
+🎬 **[Veja a simulação animada em ação](#simulação-no-tempo)** · [vídeo de 1 minuto](docs/video/controle2-simulacao-animada.mp4)
+
 ## Por que existe
 
 A ferramenta nasceu de um trabalho de Controle II de um curso de Engenharia Mecatrônica (2013). Nele, uma
@@ -88,7 +90,14 @@ malha evoluindo em uma vista física — **tanque** (nível = saída, válvula =
 (posição e força) ou **motor** (ângulo e torque) —, com medidores de r, y, erro e u, indicação de saturação e um
 cursor que percorre os gráficos.
 
-![Simulação animada: tanque respondendo a uma perturbação de carga](docs/img/simulacao-animacao.png)
+<p align="center">
+  <a href="docs/video/controle2-simulacao-animada.mp4">
+    <img src="docs/img/simulacao-animada.gif" alt="Simulação animada: tanque seguindo a referência e carrinho compensando uma perturbação de carga" width="100%">
+  </a>
+</p>
+
+▶️ **[Assista ao vídeo completo (1 min)](docs/video/controle2-simulacao-animada.mp4)** — da montagem da malha à
+comparação com e sem anti-windup.
 
 Os ganhos Kp, Ki e Kd são ajustados por *sliders* e o gráfico é recalculado na hora. Dá para fixar uma resposta e
 compará-la com outra, por exemplo com e sem anti-windup. A simulação mostra a saída, o sinal de controle (antes e
