@@ -1,0 +1,4 @@
+# Apenas para gerar dados e treinar a rede de sintonia (manage.py treinar_sintonia).
+# A aplicação faz a inferência só com NumPy e não precisa deste arquivo.
+-r requirements.txt
+scikit-learn==1.9.1

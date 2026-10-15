@@ -126,3 +126,7 @@ class TuneSerializer(serializers.Serializer):
     request = AnalyzeSerializer()
     sim = SimulationSerializer()
     goal = serializers.CharField(max_length=2000, min_length=3)
+
+
+class LearnedTuningSerializer(serializers.Serializer):
+    request = AnalyzeSerializer()

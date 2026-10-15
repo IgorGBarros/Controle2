@@ -128,6 +128,53 @@ e o assistente:
 
 O Claude decide **o que** otimizar; os **números** vêm sempre do simulador e do otimizador.
 
+#### Sintonia por rede neural (aprendida com os 18 itens)
+
+Ao lado do assistente há uma **rede neural treinada pela própria ferramenta**. Ela não é um LLM: é um perceptron
+multicamadas pequeno (7 → 32 → 32 → 3, 1.411 parâmetros) que aprendeu a ir das características de uma planta
+direto para os ganhos do PID, como faria um engenheiro experiente.
+
+Como ela foi construída:
+
+1. **Dados:** 1.600 plantas estáveis sorteadas (1 a 4 polos reais, par subamortecido opcional, atraso de
+   transporte, ganhos e constantes de tempo de 0,1 a 10).
+2. **Características:** para cada planta, as grandezas dos itens do trabalho: L e T da curva de reação
+   (item p), ganho crítico Ku e período Pu (itens j/q), sobressinal em malha aberta, ordem e polos complexos. O
+   atraso entra de forma exata (L = L<sub>planta</sub> + θ e Ku/Pu pela resposta em frequência com e<sup>−jωθ</sup>).
+   Tudo é adimensional (normalizado por K₀ e L + T), então o mesmo modelo serve para sistemas rápidos e lentos.
+3. **Rótulos:** o otimizador encontrou, para cada planta, o PID de **menor IAE com sobressinal ≤ 10%**
+   (degrau, derivada sobre a medição, anti-windup), partindo de Ziegler-Nichols.
+4. **Treino:** scikit-learn, fora da aplicação. O modelo é exportado para JSON, e a aplicação faz a inferência
+   só com NumPy, em milissegundos, sem otimizar e sem chamar API.
+
+Avaliação honesta, em **320 plantas que a rede nunca viu**, re-simulando cada uma com os ganhos previstos:
+
+| Conjunto de teste | Rede neural | Ziegler-Nichols |
+|---|---|---|
+| IAE ÷ IAE ótimo (mediana) | **1,01** | 1,26 |
+| IAE ÷ IAE ótimo (90º percentil) | 1,07 | — |
+| Sobressinal (mediana) | **5,2 %** | 29,7 % |
+| Atende sobressinal ≤ 12 % | **98,4 %** | 7,2 % |
+| Malhas instáveis | 0 | 1 |
+
+A rede ficou melhor que Ziegler-Nichols em 99,7% das plantas de teste, a cerca de 1% do ótimo que o
+otimizador leva segundos para encontrar. Na planta do trabalho de 2013 ela sugere Kp = 111,7, Ki = 19,75 e
+Kd = 50,31 (sobressinal de 2,3%, IAE 0,61), contra 69% de sobressinal do PID de Ziegler-Nichols.
+
+![Sintonia por rede neural: ganhos sugeridos, comparação com Ziegler-Nichols e avaliação no conjunto de teste](docs/img/sintonia-rede-neural.png)
+
+Escopo: realimentação unitária negativa, planta estável, sem integrador, com ganho estático positivo e com
+algum atraso aparente (L > 0). Fora da faixa de treino, a interface avisa que a sugestão é uma extrapolação.
+
+Para regenerar os dados e treinar de novo (o scikit-learn só é necessário aqui):
+
+```bash
+cd backend
+pip install -r requirements-ml.txt
+OMP_NUM_THREADS=1 python manage.py gerar_dataset_sintonia --n 1600 --workers 4   # ~20 min em 4 núcleos
+python manage.py treinar_sintonia                                               # treina, avalia e exporta o JSON
+```
+
 ### Relatório final explicativo
 
 Depois dos itens, a ferramenta escreve um relatório que **interpreta os resultados daquela malha**: se ela é
@@ -145,7 +192,7 @@ O relatório pode ser impresso ou salvo em PDF pelo navegador.
 
 ### Recursos de IA (opcionais)
 
-Com uma chave da API do Claude configurada no backend, aparecem dois recursos:
+Com uma chave da API do Claude configurada no backend, aparecem três recursos:
 
 - **Descrever o sistema em linguagem natural** — por exemplo, *"motor CC com J = 0,01 kg·m², b = 0,1 N·m·s,
   R = 1 Ω e L = 0,5 H"*. O modelo deriva G(s), C(s) e H(s), mostra a modelagem e as hipóteses, e a malha só é
@@ -156,7 +203,8 @@ Com uma chave da API do Claude configurada no backend, aparecem dois recursos:
 - **Assistente de sintonia** — dentro do simulador, encontra os ganhos do controlador a partir de um objetivo
   em linguagem natural, usando o simulador e o otimizador como ferramentas.
 
-Sem a chave, a ferramenta funciona normalmente; os painéis apenas indicam como habilitá-los.
+Sem a chave, a ferramenta funciona normalmente; os painéis apenas indicam como habilitá-los. A sintonia por
+rede neural não depende da chave: o modelo roda localmente, no próprio backend.
 
 ### Princípio: os números vêm sempre do motor de cálculo
 
@@ -226,7 +274,8 @@ de dados.
 
 ## Tecnologias
 
-- **Backend:** Python, Django, Django REST Framework, NumPy, SciPy, SymPy e o SDK `anthropic` (recursos de IA).
+- **Backend:** Python, Django, Django REST Framework, NumPy, SciPy, SymPy, o SDK `anthropic` (recursos de IA) e
+  scikit-learn (apenas para treinar a rede de sintonia).
 - **Frontend:** React, TypeScript, Vite, Recharts (gráficos) e KaTeX (fórmulas).
 
 ## API
@@ -241,6 +290,7 @@ de dados.
 | `POST` | `/api/describe/` | Linguagem natural → malha (`{"text": "..."}`) |
 | `POST` | `/api/tutor/` | Tutor em streaming (`text/event-stream`) |
 | `POST` | `/api/tune/` | Assistente de sintonia em streaming (`{"request", "sim", "goal"}`) |
+| `POST` | `/api/learned-tuning/` | Ganhos de PID sugeridos pela rede neural (`{"request": <corpo do /api/analyze/>}`) |
 
 Exemplo de corpo para `/api/analyze/`:
 
@@ -281,11 +331,14 @@ backend/
       items.py            itens a) a r)
       simulate.py         simulação no tempo (saturação, anti-windup, ruído, atraso exato)
       optimize.py         sintonia numérica de P/PI/PD/PID com restrições
+      learned.py          sintonia aprendida: características da planta e inferência da rede (NumPy)
       narrative.py        relatório final explicativo
       report.py           orquestração e serialização JSON
     examples.py           malhas de exemplo
     llm.py                tutor e entrada em linguagem natural (Claude)
     tuning.py             assistente de sintonia (Claude + simulador + otimizador)
+    ml/                   geração de dados, treino e o modelo exportado (model/sintonia_mlp.json)
+    management/commands/  gerar_dataset_sintonia, treinar_sintonia
     views.py, urls.py     API REST
     tests/                testes do motor, da API e da IA
 frontend/

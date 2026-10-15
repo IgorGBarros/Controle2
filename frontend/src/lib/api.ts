@@ -217,3 +217,59 @@ export async function tuneController(request: AnalyzeRequest, sim: SimParams, go
     }
   }
 }
+
+
+/* ---- Sintonia aprendida (rede neural) ---- */
+
+type Gains = { kp: number; ki: number; kd: number }
+
+export interface LearnedModelMeta {
+  arquitetura: number[]
+  parametros: number
+  n_treino: number
+  n_teste: number
+  epocas: number
+  r2_teste: Record<string, number>
+  especificacao: string
+  treinado_em: string
+  avaliacao: {
+    n_teste: number
+    iae_rel_otimo_mediana: number
+    iae_rel_otimo_p90: number
+    zn_iae_rel_otimo_mediana: number
+    sobressinal_mediana: number
+    zn_sobressinal_mediana: number
+    taxa_spec: number
+    zn_taxa_spec: number
+    divergiu: number
+    zn_divergiu: number
+    melhor_que_zn: number
+  }
+}
+
+export type LearnedTuning =
+  | { available: false; reason: string }
+  | { available: true; applicable: false; reason: string }
+  | {
+      available: true
+      applicable: true
+      gains: Gains
+      normalized: Gains
+      features: Record<string, number>
+      scales: { K0: number; L: number; T: number }
+      scenario: { derivative_on: SimParams['derivative_on']; n_filter: number; tfinal: number; anti_windup: SimParams['anti_windup']; overshoot_max: number }
+      metrics: SimMetrics
+      zn: { gains: Gains; metrics: SimMetrics }
+      warnings: string[]
+      model: LearnedModelMeta
+    }
+
+export async function learnedTuning(request: AnalyzeRequest, signal?: AbortSignal): Promise<LearnedTuning> {
+  const resp = await fetch(`${BASE}/api/learned-tuning/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request }),
+    signal,
+  })
+  return handle<LearnedTuning>(resp)
+}

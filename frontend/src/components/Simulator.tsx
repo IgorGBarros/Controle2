@@ -4,6 +4,7 @@ import { fmt } from '../lib/format'
 import type { AnalysisResult, AnalyzeRequest } from '../lib/types'
 import { XYChart } from './Charts'
 import { SimAnimation } from './SimAnimation'
+import { LearnedTuning } from './LearnedTuning'
 import { TuningAssistant } from './TuningAssistant'
 import { Note, Stats } from './ui'
 
@@ -135,7 +136,7 @@ export function Simulator({ request, result, llmEnabled }: Props) {
     setDistOn(false)
   }
 
-  const applyTuning = (g: { kp: number; ki: number; kd: number; anti_windup: SimParams['anti_windup']; derivative_on: SimParams['derivative_on'] }) => {
+  const applyTuning = (g: { kp: number; ki: number; kd: number; anti_windup: SimParams['anti_windup']; derivative_on: SimParams['derivative_on']; n_filter?: number }) => {
     setSim((s) => ({ ...s, controller: 'pid', ...g }))
     setRanges((r) => ({ kp: Math.max(r.kp, niceMax(g.kp)), ki: Math.max(r.ki, niceMax(g.ki)), kd: Math.max(r.kd, niceMax(g.kd)) }))
   }
@@ -374,6 +375,7 @@ export function Simulator({ request, result, llmEnabled }: Props) {
       )}
         </div>
       </div>
+      <LearnedTuning request={request} onApply={applyTuning} />
       <TuningAssistant request={request} sim={effective} enabled={llmEnabled} onApply={applyTuning} />
     </section>
   )
