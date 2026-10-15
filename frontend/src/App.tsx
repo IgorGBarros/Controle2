@@ -283,7 +283,7 @@ export default function App() {
         {result && activeTab === 'relatorio' && result.report && <Report report={result.report} k={result.params.k} />}
         {result && lastRequest && (
           <div hidden={activeTab !== 'tutor'}>
-            <Tutor request={lastRequest} enabled={llm.enabled} model={modelLabel(llm)} />
+            <Tutor request={lastRequest} status={llm.tutor ?? llm} model={modelLabel(llm.tutor ?? llm)} onRetry={() => fetchLlmStatus().then(setLlm).catch(() => undefined)} />
           </div>
         )}
       </div>

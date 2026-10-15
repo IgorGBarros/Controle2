@@ -75,7 +75,27 @@ class OllamaTests(SimpleTestCase):
 
     def test_status(self):
         data = self.client.get("/api/llm/status/").json()
-        self.assertEqual(data, {"enabled": True, "provider": "ollama", "model": "qwen3.5", "reachable": True})
+        local = {"enabled": True, "provider": "ollama", "model": "qwen3.5", "reachable": True}
+        self.assertEqual(data, {**local, "tutor": local})
+
+    def test_tutor_defaults_to_ollama_even_with_claude_key(self):
+        env = {"ANTHROPIC_API_KEY": "test", "OLLAMA_HOST": f"127.0.0.1:{self.server.server_port}"}
+        with mock.patch.dict("os.environ", env, clear=True):
+            status = self.client.get("/api/llm/status/").json()
+            self.assertEqual(status["provider"], "anthropic")         # demais recursos seguem no Claude
+            self.assertEqual(status["tutor"]["provider"], "ollama")
+            FakeOllama.replies = [["Resposta local."]]
+            body = {"request": PLANT, "messages": [{"role": "user", "content": "oi"}]}
+            events = self.sse(self.client.post("/api/tutor/", body, content_type="application/json"))
+        self.assertEqual("".join(e.get("delta", "") for e in events), "Resposta local.")
+        self.assertEqual(len(FakeOllama.requests), 1)
+
+    def test_tutor_unreachable_returns_503(self):
+        with mock.patch.dict("os.environ", {"OLLAMA_HOST": "127.0.0.1:9"}):
+            body = {"request": PLANT, "messages": [{"role": "user", "content": "oi"}]}
+            resp = self.client.post("/api/tutor/", body, content_type="application/json")
+        self.assertEqual(resp.status_code, 503)
+        self.assertIn("ollama pull qwen3.5", resp.json()["errors"]["llm"][0])
 
     def test_tutor_streams_from_local_model(self):
         FakeOllama.replies = [["O sistema ", "é estável."]]

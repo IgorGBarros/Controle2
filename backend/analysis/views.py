@@ -68,8 +68,11 @@ def tutor_view(request):
     ser = TutorSerializer(data=request.data)
     if not ser.is_valid():
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
-    if not llm.enabled():
-        return Response({"errors": {"llm": [llm.DISABLED_MESSAGE]}},
+    if not llm.enabled("tutor"):
+        return Response({"errors": {"llm": [llm.TUTOR_DISABLED_MESSAGE]}},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if llm.provider("tutor") == "ollama" and not llm.ollama.reachable():
+        return Response({"errors": {"llm": [llm.ollama.unreachable_message()]}},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE)
     spec, params = split_request(ser.validated_data["request"])
     messages = ser.validated_data["messages"]

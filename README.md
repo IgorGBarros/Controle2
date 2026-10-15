@@ -192,19 +192,20 @@ O relatório pode ser impresso ou salvo em PDF pelo navegador.
 
 ### Recursos de IA (opcionais)
 
-Com uma chave da API do Claude, ou com um modelo local no Ollama (veja [Habilitar a IA](#habilitar-a-ia-opcional)), aparecem três recursos:
-
+- **Tutor de IA** — um chat que responde perguntas sobre a malha analisada ("por que o sobressinal aumenta com
+  K?"), explicando com base nos dois livros acima. **Roda num modelo local, `qwen3.5`, pelo Ollama**: sem chave
+  de API, sem custo e sem enviar a sua malha para fora da máquina. Basta ter o Ollama aberto com o modelo
+  baixado (veja [Habilitar a IA](#habilitar-a-ia-opcional)).
 - **Descrever o sistema em linguagem natural** — por exemplo, *"motor CC com J = 0,01 kg·m², b = 0,1 N·m·s,
   R = 1 Ω e L = 0,5 H"*. O modelo deriva G(s), C(s) e H(s), mostra a modelagem e as hipóteses, e a malha só é
   usada depois de **validada pelo motor de cálculo**. O formulário é preenchido para você conferir antes de
   analisar.
-- **Tutor de IA** — um chat ao final da página que responde perguntas sobre a malha analisada ("por que o
-  sobressinal aumenta com K?"), explicando com base nos dois livros acima.
 - **Assistente de sintonia** — dentro do simulador, encontra os ganhos do controlador a partir de um objetivo
   em linguagem natural, usando o simulador e o otimizador como ferramentas.
 
-Sem a chave, a ferramenta funciona normalmente; os painéis apenas indicam como habilitá-los. A sintonia por
-rede neural não depende da chave: o modelo roda localmente, no próprio backend.
+A linguagem natural e o assistente de sintonia usam o Claude (com `ANTHROPIC_API_KEY`) ou, se preferir, também
+o Ollama (`LLM_PROVIDER=ollama`). Sem nada configurado, a ferramenta funciona normalmente e os painéis indicam
+como habilitar cada recurso. A sintonia por rede neural não depende de nenhum deles: roda no próprio backend.
 
 ### Princípio: os números vêm sempre do motor de cálculo
 
@@ -234,7 +235,7 @@ Requisitos: Python 3.12+ e Node.js 20.19+ (ou 22.12+).
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate        # Windows (PowerShell): .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python manage.py runserver
 ```
@@ -252,36 +253,72 @@ Acesse <http://localhost:5173>. Em desenvolvimento, o Vite encaminha `/api` para
 
 ### Habilitar a IA (opcional)
 
+| Recurso | Provedor padrão | Como trocar |
+|---|---|---|
+| Tutor de IA | Ollama (`qwen3.5`, local) | `TUTOR_PROVIDER=anthropic` (exige `ANTHROPIC_API_KEY`) |
+| Linguagem natural e assistente de sintonia | Claude (`ANTHROPIC_API_KEY`) | `LLM_PROVIDER=ollama` |
+
+#### Tutor com o Ollama (padrão)
+
+1. Instale o Ollama: <https://ollama.com/download> (Windows, macOS ou Linux).
+2. Baixe o modelo uma vez e confira:
+
+   ```bash
+   ollama pull qwen3.5
+   ollama list                  # qwen3.5 deve aparecer
+   ```
+
+3. Deixe o Ollama aberto (no Windows e no macOS ele fica na bandeja do sistema; no Linux, `ollama serve`).
+4. Inicie o Django normalmente. Não é preciso definir nenhuma variável: o tutor mostra
+   **"Modelo: qwen3.5 (local, via Ollama)"**. Se o Ollama não estiver no ar, o painel explica o que fazer e tem
+   um botão para verificar de novo.
+
+#### Variáveis de ambiente
+
+Todas são opcionais; use só as que precisar. Defina-as no mesmo terminal, antes de iniciar o Django:
+
+**Linux / macOS (bash, zsh)**
+
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...      # antes de iniciar o Django
-export CLAUDE_MODEL=claude-opus-5-5      # opcional
+export ANTHROPIC_API_KEY=sk-ant-...          # habilita o Claude (linguagem natural e assistente de sintonia)
+export LLM_PROVIDER=ollama                   # ...ou usa o Ollama também nesses dois recursos
+export TUTOR_PROVIDER=anthropic              # usa o Claude no tutor em vez do Ollama
+export OLLAMA_MODEL=qwen3.5                  # outro modelo do Ollama (precisa suportar ferramentas)
+export OLLAMA_HOST=http://localhost:11434    # endereço do Ollama
+export OLLAMA_NUM_CTX=32768                  # janela de contexto (a análise ocupa ~9 mil tokens)
+export OLLAMA_THINK=1                        # liga o modo de raciocínio (melhor, porém mais lento)
+python manage.py runserver
 ```
 
-Com a IA habilitada, a descrição digitada, a malha e os resultados da análise são enviados à API da Anthropic.
+**Windows (PowerShell)**
 
-#### Alternativa: modelo local com Ollama (qwen3.5)
-
-Os três recursos de IA (tutor, linguagem natural e assistente de sintonia) também funcionam com um modelo que
-roda na sua máquina, sem chave de API e sem enviar dados para fora:
-
-```bash
-ollama pull qwen3.5                      # uma vez
-ollama serve                             # se o Ollama ainda não estiver rodando
-
-export LLM_PROVIDER=ollama               # antes de iniciar o Django
-export OLLAMA_MODEL=qwen3.5              # opcional (padrão: qwen3.5); qualquer modelo com suporte a ferramentas
-export OLLAMA_HOST=http://localhost:11434  # opcional
-export OLLAMA_NUM_CTX=32768              # opcional: janela de contexto (a análise ocupa ~9 mil tokens)
-export OLLAMA_THINK=0                    # opcional: 1 liga o modo de raciocínio (melhor, porém mais lento)
+```powershell
+$env:ANTHROPIC_API_KEY = "sk-ant-..."         # habilita o Claude (linguagem natural e assistente de sintonia)
+$env:LLM_PROVIDER = "ollama"                  # ...ou usa o Ollama também nesses dois recursos
+$env:TUTOR_PROVIDER = "anthropic"             # usa o Claude no tutor em vez do Ollama
+$env:OLLAMA_MODEL = "qwen3.5"                 # outro modelo do Ollama (precisa suportar ferramentas)
+$env:OLLAMA_HOST = "http://localhost:11434"   # endereço do Ollama
+$env:OLLAMA_NUM_CTX = "32768"                 # janela de contexto
+$env:OLLAMA_THINK = "1"                       # liga o modo de raciocínio
+python manage.py runserver
 ```
+
+No PowerShell, `$env:` vale só para a janela atual. Para gravar de forma permanente, use
+`setx OLLAMA_MODEL qwen3.5` e abra um terminal novo. (No Prompt de Comando, `cmd.exe`, o equivalente é
+`set OLLAMA_MODEL=qwen3.5`.)
+
+#### Como funciona e o que vai para fora
 
 O backend usa a API nativa do Ollama (`/api/chat`) só com a biblioteca padrão do Python. O tutor usa
 streaming; a linguagem natural usa saída estruturada por JSON Schema (`format`); o assistente de sintonia usa
 a chamada de ferramentas nativa. Como modelos locais nem sempre respeitam o schema à risca, os argumentos
 das ferramentas são completados e saneados antes de chegar ao simulador e ao otimizador. O princípio não
 muda: **os números vêm sempre do motor de cálculo**, e a malha proposta pelo modelo é validada antes de ser
-usada. Um modelo pequeno explica e escolhe estratégias pior que o Claude, mas não consegue inventar métricas.
-A interface mostra qual modelo está em uso e avisa se o servidor do Ollama não responder.
+usada. Um modelo local pequeno explica e escolhe estratégias pior que o Claude, mas não consegue inventar
+métricas.
+
+Com o Ollama, nada sai da sua máquina. Com o Claude, a descrição digitada, a malha e os resultados da análise
+são enviados à API da Anthropic.
 
 ### Testes
 
@@ -310,7 +347,7 @@ de dados.
 | `POST` | `/api/simulate/` | Simulação no tempo (`{"request": <corpo do /api/analyze/>, "sim": {...}}`) |
 | `GET` | `/api/examples/` | Malhas de exemplo |
 | `GET` | `/api/health/` | Verificação de saúde |
-| `GET` | `/api/llm/status/` | Indica se a IA está habilitada, o provedor (`anthropic` ou `ollama`) e o modelo |
+| `GET` | `/api/llm/status/` | Provedor (`anthropic` ou `ollama`), modelo e disponibilidade da IA; o campo `tutor` traz o mesmo para o tutor |
 | `POST` | `/api/describe/` | Linguagem natural → malha (`{"text": "..."}`) |
 | `POST` | `/api/tutor/` | Tutor em streaming (`text/event-stream`) |
 | `POST` | `/api/tune/` | Assistente de sintonia em streaming (`{"request", "sim", "goal"}`) |
