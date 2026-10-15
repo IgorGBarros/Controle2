@@ -42,6 +42,15 @@ def split_request(data: dict) -> tuple[dict, Params]:
     return spec, Params(**data)
 
 
+def feature_unavailable(feature: str) -> Response | None:
+    """503 com instruções quando o recurso de IA está desabilitado ou o Ollama não responde."""
+    if not llm.enabled(feature):
+        return Response({"errors": {"llm": [llm.disabled_message(feature)]}}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if llm.provider(feature) == "ollama" and not llm.ollama.reachable():
+        return Response({"errors": {"llm": [llm.ollama.unreachable_message()]}}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return None
+
+
 @api_view(["GET"])
 def llm_status(request):
     return Response(llm.status())
@@ -68,12 +77,9 @@ def tutor_view(request):
     ser = TutorSerializer(data=request.data)
     if not ser.is_valid():
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
-    if not llm.enabled("tutor"):
-        return Response({"errors": {"llm": [llm.TUTOR_DISABLED_MESSAGE]}},
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if llm.provider("tutor") == "ollama" and not llm.ollama.reachable():
-        return Response({"errors": {"llm": [llm.ollama.unreachable_message()]}},
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    unavailable = feature_unavailable("tutor")
+    if unavailable:
+        return unavailable
     spec, params = split_request(ser.validated_data["request"])
     messages = ser.validated_data["messages"]
     try:
@@ -122,9 +128,9 @@ def tune_view(request):
     ser = TuneSerializer(data=request.data)
     if not ser.is_valid():
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
-    if not llm.enabled():
-        return Response({"errors": {"llm": [llm.DISABLED_MESSAGE]}},
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    unavailable = feature_unavailable("tuning")
+    if unavailable:
+        return unavailable
     spec, params = split_request(ser.validated_data["request"])
     base = SimParams(**ser.validated_data["sim"])
     try:

@@ -28,6 +28,9 @@ class FakeOllama(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         FakeOllama.requests.append(body)
         reply = FakeOllama.replies.pop(0)
+        if isinstance(reply, dict) and "__error__" in reply:
+            code, msg = reply["__error__"]
+            return self._json({"error": msg}, code)
         if body.get("stream"):
             self.send_response(200)
             self.send_header("Content-Type", "application/x-ndjson")
@@ -76,7 +79,7 @@ class OllamaTests(SimpleTestCase):
     def test_status(self):
         data = self.client.get("/api/llm/status/").json()
         local = {"enabled": True, "provider": "ollama", "model": "qwen3.5", "reachable": True}
-        self.assertEqual(data, {**local, "tutor": local})
+        self.assertEqual(data, {**local, "tutor": local, "tuning": local})
 
     def test_tutor_defaults_to_ollama_even_with_claude_key(self):
         env = {"ANTHROPIC_API_KEY": "test", "OLLAMA_HOST": f"127.0.0.1:{self.server.server_port}"}
@@ -107,8 +110,10 @@ class OllamaTests(SimpleTestCase):
         self.assertEqual(req["model"], "qwen3.5")
         self.assertEqual(req["messages"][0]["role"], "system")
         self.assertIn("<resultados_da_ferramenta>", req["messages"][1]["content"])  # contexto calculado pelo motor
+        self.assertNotIn("<relatorio_gerado>", req["messages"][1]["content"])     # contexto enxuto
+        self.assertLess(len(req["messages"][1]["content"]), 16000)
         self.assertTrue(req["messages"][1]["content"].endswith("É estável?"))
-        self.assertGreaterEqual(req["options"]["num_ctx"], 16384)
+        self.assertEqual(req["options"]["num_ctx"], 8192)
 
     def test_describe_uses_json_schema_and_engine_validation(self):
         out = {"plant": {"mode": "tf", "num": "10", "den": "s^2 + 2s + 10", "zeros": "", "poles": "", "gain": 0,
@@ -163,3 +168,29 @@ class OllamaTests(SimpleTestCase):
             resp = self.client.post("/api/describe/", {"text": "um motor CC"}, content_type="application/json")
         self.assertEqual(resp.status_code, 502)
         self.assertIn("ollama serve", resp.json()["errors"]["llm"][0])
+
+    def test_retries_with_smaller_context_when_out_of_memory(self):
+        oom = "llama-server reported out-of-memory during startup: failed to allocate compute pp buffers"
+        FakeOllama.replies = [{"__error__": (500, oom)}, ["Resposta com contexto menor."]]
+        body = {"request": PLANT, "messages": [{"role": "user", "content": "oi"}]}
+        events = self.sse(self.client.post("/api/tutor/", body, content_type="application/json"))
+        self.assertEqual("".join(e.get("delta", "") for e in events), "Resposta com contexto menor.")
+        self.assertEqual([r["options"]["num_ctx"] for r in FakeOllama.requests], [8192, ollama_client.MIN_CTX])
+
+    def test_out_of_memory_twice_gives_actionable_message(self):
+        oom = "ggml_gallocr_reserve_n_impl: failed to allocate CUDA_Host buffer of size 58835008"
+        FakeOllama.replies = [{"__error__": (500, oom)}, {"__error__": (500, oom)}]
+        body = {"request": PLANT, "messages": [{"role": "user", "content": "oi"}]}
+        events = self.sse(self.client.post("/api/tutor/", body, content_type="application/json"))
+        self.assertIn("Memória insuficiente", events[-1]["error"])
+        self.assertIn("qwen3.5:4b", events[-1]["error"])
+
+    def test_tuning_defaults_to_ollama_even_with_claude_key(self):
+        env = {"ANTHROPIC_API_KEY": "test", "OLLAMA_HOST": f"127.0.0.1:{self.server.server_port}"}
+        FakeOllama.replies = [{"content": "", "tool_calls": [{"function": {"name": "finalizar", "arguments": {
+            "kp": 10, "ki": 6, "kd": 0, "estrutura": "PI", "resumo": "ok", "atendeu": True}}}]}]
+        with mock.patch.dict("os.environ", env, clear=True):
+            body = {"request": PLANT, "sim": {"tfinal": 15}, "goal": "sobressinal abaixo de 5%"}
+            events = self.sse(self.client.post("/api/tune/", body, content_type="application/json"))
+        self.assertEqual([e["type"] for e in events], ["start", "final", "done"])
+        self.assertEqual(len(FakeOllama.requests), 1)

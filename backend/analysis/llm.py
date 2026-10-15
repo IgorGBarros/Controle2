@@ -6,8 +6,9 @@ ser usada (entrada em linguagem natural).
 
 Configuração (variáveis de ambiente):
     LLM_PROVIDER        "anthropic" (padrão) ou "ollama" (modelo local; ver ollama_client.py) para a
-                        linguagem natural e o assistente de sintonia
+                        entrada em linguagem natural
     TUTOR_PROVIDER      provedor do tutor: "ollama" (padrão), "anthropic" ou "auto" (segue LLM_PROVIDER)
+    TUNING_PROVIDER     provedor do assistente de sintonia: "ollama" (padrão), "anthropic" ou "auto"
     ANTHROPIC_API_KEY   chave da API do Claude (habilita os recursos com o provedor anthropic)
     CLAUDE_MODEL        modelo do Claude (padrão: claude-opus-5-5)
 """
@@ -39,8 +40,15 @@ class LLMUnavailable(RuntimeError):
 
 DISABLED_MESSAGE = ("Recursos de IA desabilitados: defina ANTHROPIC_API_KEY no backend "
                     "ou use um modelo local com LLM_PROVIDER=ollama.")
-TUTOR_DISABLED_MESSAGE = ("Tutor desabilitado: TUTOR_PROVIDER=anthropic exige ANTHROPIC_API_KEY. "
-                          "Remova TUTOR_PROVIDER para usar o modelo local no Ollama.")
+# Recursos que rodam no modelo local (Ollama) por padrão, e a variável que troca o provedor.
+FEATURE_ENV = {"tutor": "TUTOR_PROVIDER", "tuning": "TUNING_PROVIDER"}
+
+
+def disabled_message(feature: str | None = None) -> str:
+    env = FEATURE_ENV.get(feature or "")
+    if env:
+        return f"Desabilitado: {env}=anthropic exige ANTHROPIC_API_KEY. Remova {env} para usar o modelo local no Ollama."
+    return DISABLED_MESSAGE
 
 
 def _has_key() -> bool:
@@ -50,10 +58,11 @@ def _has_key() -> bool:
 def provider(feature: str | None = None) -> str | None:
     """Provedor de um recurso: "ollama", "anthropic" ou None (IA desabilitada).
 
-    O tutor roda no Ollama por padrão (TUTOR_PROVIDER); os demais recursos seguem LLM_PROVIDER.
+    O tutor e o assistente de sintonia rodam no Ollama por padrão (TUTOR_PROVIDER e TUNING_PROVIDER);
+    a entrada em linguagem natural segue LLM_PROVIDER.
     """
-    if feature == "tutor":
-        choice = os.environ.get("TUTOR_PROVIDER", "ollama").strip().lower()
+    if feature in FEATURE_ENV:
+        choice = os.environ.get(FEATURE_ENV[feature], "ollama").strip().lower()
         if choice == "ollama":
             return "ollama"
         if choice in {"anthropic", "claude"}:
@@ -79,8 +88,7 @@ def status() -> dict:
             out["reachable"] = ollama.reachable()
         return out
 
-    general, tutor = one(None), one("tutor")
-    return {**general, "tutor": tutor}
+    return {**one(None), "tutor": one("tutor"), "tuning": one("tuning")}
 
 
 def get_client() -> anthropic.Anthropic:
@@ -145,7 +153,37 @@ def compact(obj, max_list: int = 24):
     return obj
 
 
-def analysis_context(result: dict) -> str:
+# Campos que só servem à interface (LaTeX, código MATLAB, construções gráficas): ficam fora do contexto enxuto.
+LEAN_DROP = {"matlab", "rules", "tangent", "laplace", "ode", "state_space", "blocks", "controller_tf", "pade",
+             "inflection", "latex"}
+
+
+def lean(obj):
+    """Versão enxuta para modelos locais: sem campos de interface, vazios removidos, 4 algarismos significativos."""
+    if isinstance(obj, dict):
+        return {k: lean(v) for k, v in obj.items() if k not in LEAN_DROP and v not in (None, [], {})}
+    if isinstance(obj, list):
+        return [lean(v) for v in obj]
+    if isinstance(obj, float):
+        return float(f"{obj:.4g}")
+    return obj
+
+
+def analysis_context(result: dict, compact_mode: bool = False) -> str:
+    """Resultados da análise como contexto para o modelo.
+
+    ``compact_mode`` (modelos locais) omite o relatório em texto — ele é derivado dos itens — e os campos de
+    interface, reduzindo o contexto de ~25 mil para ~12 mil caracteres, para caber em janelas de 8 mil tokens.
+    """
+    if compact_mode:
+        data = {
+            "sistema": lean(compact(result["system"], 8)),
+            "parametros": result["params"],
+            "itens": {it["key"]: {"titulo": it["title"], "dados": lean(compact(it["data"], 8)), "erro": it["error"]}
+                      for it in result["items"]},
+        }
+        return ("<resultados_da_ferramenta>\n" + json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+                + "\n</resultados_da_ferramenta>")
     report_text = []
     for s in result.get("report", {}).get("sections", []):
         report_text.append(f"## {s['title']}")
@@ -193,8 +231,9 @@ essa malha na ferramenta para obter os números.
 def tutor_stream(spec: dict, params: Params, messages: list[dict]) -> Iterator[str]:
     """Gera a resposta do tutor em pedaços de texto (streaming)."""
     result = cached_analysis(spec, params)
-    context = analysis_context(result)
-    if provider("tutor") == "ollama":
+    local = provider("tutor") == "ollama"
+    context = analysis_context(result, compact_mode=local)
+    if local:
         history = [{"role": "user", "content": f"{context}\n\n{messages[0]['content']}"}]
         history += [{"role": m["role"], "content": m["content"]} for m in messages[1:]]
         yield from ollama.chat_stream(history, TUTOR_SYSTEM)

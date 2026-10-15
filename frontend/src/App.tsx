@@ -222,6 +222,10 @@ export default function App() {
     [go],
   )
 
+  const refreshLlm = useCallback(() => {
+    fetchLlmStatus().then(setLlm).catch(() => undefined)
+  }, [])
+
   useEffect(() => {
     fetchExamples().then(setExamples).catch(() => setExamples([]))
     fetchLlmStatus().then(setLlm).catch(() => undefined)
@@ -277,13 +281,13 @@ export default function App() {
         {result && activeTab === 'analise' && <Analysis result={result} current={item} go={go} />}
         {result && lastRequest && (
           <div hidden={activeTab !== 'simulacao'}>
-            <Simulator request={lastRequest} result={result} llmEnabled={llm.enabled} />
+            <Simulator request={lastRequest} result={result} tuningStatus={llm.tuning ?? llm} onRetryLlm={refreshLlm} />
           </div>
         )}
         {result && activeTab === 'relatorio' && result.report && <Report report={result.report} k={result.params.k} />}
         {result && lastRequest && (
           <div hidden={activeTab !== 'tutor'}>
-            <Tutor request={lastRequest} status={llm.tutor ?? llm} model={modelLabel(llm.tutor ?? llm)} onRetry={() => fetchLlmStatus().then(setLlm).catch(() => undefined)} />
+            <Tutor request={lastRequest} status={llm.tutor ?? llm} model={modelLabel(llm.tutor ?? llm)} onRetry={refreshLlm} />
           </div>
         )}
       </div>

@@ -284,7 +284,7 @@ def tune_stream(spec: dict, params: Params, base: SimParams, goal: str) -> Itera
     lp = build_loop(spec)
     analysis = llm.cached_analysis(spec, params)
     context = f"<malha_e_cenario>\n{scenario_text(lp, base, analysis)}\n</malha_e_cenario>"
-    session = _OllamaSession(context, goal) if llm.provider() == "ollama" else _ClaudeSession(context, goal)
+    session = _OllamaSession(context, goal) if llm.provider("tuning") == "ollama" else _ClaudeSession(context, goal)
     tool_calls = 0
     best = None  # melhor tentativa viável, caso o modelo não finalize
     yield {"type": "start"}

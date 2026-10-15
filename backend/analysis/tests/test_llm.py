@@ -91,6 +91,7 @@ class DisabledTests(SimpleTestCase):
         # o tutor usa o Ollama por padrão; sem servidor no ar, responde 503 com instruções
         self.assertEqual(status["tutor"]["provider"], "ollama")
         self.assertFalse(status["tutor"]["reachable"])
+        self.assertEqual(status["tuning"]["provider"], "ollama")
         resp = self.client.post("/api/describe/", {"text": "motor CC"}, content_type="application/json")
         self.assertEqual(resp.status_code, 503)
         resp = self.client.post("/api/tutor/", {"request": {"num": "1", "den": "s+1"}, "messages": [{"role": "user", "content": "oi"}]},
