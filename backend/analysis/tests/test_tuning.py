@@ -36,7 +36,7 @@ def text(t):
     return SimpleNamespace(type="text", text=t)
 
 
-@mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test"})
+@mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test", "TUNING_PROVIDER": "anthropic"})
 class TuneLoopTests(SimpleTestCase):
     def body(self):
         return {"request": PLANT, "sim": {"tfinal": 15, "u_min": -20, "u_max": 20}, "goal": "sobressinal abaixo de 5% sem saturar"}

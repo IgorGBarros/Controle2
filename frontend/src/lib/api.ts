@@ -44,8 +44,9 @@ export interface LlmStatus {
   model: string
   provider?: 'anthropic' | 'ollama' | null
   reachable?: boolean
-  /** O tutor tem provedor próprio (Ollama por padrão). */
-  tutor?: Omit<LlmStatus, 'tutor'>
+  /** O tutor e o assistente de sintonia têm provedor próprio (Ollama por padrão). */
+  tutor?: Omit<LlmStatus, 'tutor' | 'tuning'>
+  tuning?: Omit<LlmStatus, 'tutor' | 'tuning'>
 }
 
 /** Nome do modelo para exibir, indicando quando ele roda localmente. */

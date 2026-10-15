@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, tuneController, type SimMetrics, type SimParams, type TuneEvent, type TuneRecommendation } from '../lib/api'
+import { ApiError, modelLabel, tuneController, type LlmStatus, type SimMetrics, type SimParams, type TuneEvent, type TuneRecommendation } from '../lib/api'
 import { fmt } from '../lib/format'
 import type { AnalyzeRequest } from '../lib/types'
 import { ChatText } from './ChatText'
-import { AiDisabled, Note, Stats, Table } from './ui'
+import { Note, OllamaOffline, Stats, Table } from './ui'
 
 const GOALS = [
   'Quero sobressinal abaixo de 5%, mesmo que a resposta fique mais lenta.',
@@ -17,7 +17,8 @@ type Applied = { kp: number; ki: number; kd: number; anti_windup: SimParams['ant
 interface Props {
   request: AnalyzeRequest
   sim: SimParams
-  enabled: boolean
+  status: Omit<LlmStatus, 'tutor' | 'tuning'>
+  onRetry?: () => void
   onApply: (g: Applied) => void
 }
 
@@ -29,7 +30,9 @@ const sec = (v: number | null | undefined) => (v === null || v === undefined ? '
 const ESTRUTURA_DESC: Record<string, string> = { P: 'P', PI: 'PI', PD: 'PD', PID: 'PID' }
 
 /** Assistente de sintonia: o modelo (Claude ou local) define a especificação e usa o simulador e o otimizador como ferramentas. */
-export function TuningAssistant({ request, sim, enabled, onApply }: Props) {
+export function TuningAssistant({ request, sim, status, onRetry, onApply }: Props) {
+  const enabled = status.enabled
+  const offline = status.provider === 'ollama' && status.reachable === false
   const [goal, setGoal] = useState('')
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState<LogItem[]>([])
@@ -75,16 +78,21 @@ export function TuningAssistant({ request, sim, enabled, onApply }: Props) {
       <h3>
         <span className="ai-badge">IA</span> Assistente de sintonia
       </h3>
-      {!enabled ? (
+      {status.provider === undefined ? (
+        <p className="muted small">Verificando o modelo do assistente…</p>
+      ) : !enabled ? (
         <p className="muted small">
-          <AiDisabled />
+          O assistente está configurado para o Claude (<code>TUNING_PROVIDER=anthropic</code>), mas não há <code>ANTHROPIC_API_KEY</code> no backend.
+          Remova <code>TUNING_PROVIDER</code> para usar o modelo local no Ollama e reinicie o Django.
         </p>
+      ) : offline ? (
+        <OllamaOffline what="O assistente" model={status.model} onRetry={onRetry} />
       ) : (
         <>
           <p className="muted small">
             Descreva o que você quer da resposta. O assistente transforma o objetivo em especificações, escolhe a estrutura do controlador e usa o simulador e
             um otimizador numérico para encontrar os ganhos, no cenário configurado acima (saturação, perturbação, ruído). Os números vêm sempre do motor de
-            cálculo.
+            cálculo. Modelo: {modelLabel(status)}.
           </p>
           <textarea rows={2} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Ex.: sobressinal abaixo de 5% sem saturar o atuador" disabled={busy} />
           <div className="describe-actions">

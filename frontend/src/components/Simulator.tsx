@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ApiError, simulateLoop, type SimParams, type SimResult } from '../lib/api'
+import { ApiError, simulateLoop, type LlmStatus, type SimParams, type SimResult } from '../lib/api'
 import { fmt } from '../lib/format'
 import type { AnalysisResult, AnalyzeRequest } from '../lib/types'
 import { XYChart } from './Charts'
@@ -11,7 +11,8 @@ import { Note, Stats } from './ui'
 interface Props {
   request: AnalyzeRequest
   result: AnalysisResult
-  llmEnabled: boolean
+  tuningStatus: Omit<LlmStatus, 'tutor' | 'tuning'>
+  onRetryLlm?: () => void
 }
 
 function initialGains(result: AnalysisResult): { kp: number; ki: number; kd: number; source: string } {
@@ -68,7 +69,7 @@ function Num({ label, value, onChange, suffix, optional }: { label: ReactNode; v
 const sec = (v: number | null | undefined) => (v === null || v === undefined ? 'não acomodou' : `${fmt(v)} s`)
 
 /** Simulação no tempo com saturação, anti-windup, perturbação, ruído e controlador discreto. */
-export function Simulator({ request, result, llmEnabled }: Props) {
+export function Simulator({ request, result, tuningStatus, onRetryLlm }: Props) {
   const init = useMemo(() => initialGains(result), [result])
   const [sim, setSim] = useState<SimParams>(() => ({
     controller: 'pid',
@@ -376,7 +377,7 @@ export function Simulator({ request, result, llmEnabled }: Props) {
         </div>
       </div>
       <LearnedTuning request={request} onApply={applyTuning} />
-      <TuningAssistant request={request} sim={effective} enabled={llmEnabled} onApply={applyTuning} />
+      <TuningAssistant request={request} sim={effective} status={tuningStatus} onRetry={onRetryLlm} onApply={applyTuning} />
     </section>
   )
 }

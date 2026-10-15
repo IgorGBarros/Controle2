@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, askTutor, type ChatMessage, type LlmStatus } from '../lib/api'
 import type { AnalyzeRequest } from '../lib/types'
 import { ChatText } from './ChatText'
-import { Note } from './ui'
+import { OllamaOffline } from './ui'
 
 const SUGGESTIONS = [
   'Explique em palavras simples se esta malha é estável e por quê.',
@@ -14,7 +14,7 @@ const SUGGESTIONS = [
 
 interface Props {
   request: AnalyzeRequest
-  status: Omit<LlmStatus, 'tutor'>
+  status: Omit<LlmStatus, 'tutor' | 'tuning'>
   model?: string
   onRetry?: () => void
 }
@@ -97,15 +97,7 @@ export function Tutor({ request, status, model, onRetry }: Props) {
           <code>TUTOR_PROVIDER</code> para usar o modelo local no Ollama e reinicie o Django.
         </p>
       ) : offline ? (
-        <Note tone="warn">
-          O tutor roda num modelo local (<strong>{status.model}</strong>) pelo Ollama, que não respondeu. Instale o Ollama (ollama.com), rode{' '}
-          <code>ollama pull {status.model}</code> e deixe-o aberto (ou rode <code>ollama serve</code>).{' '}
-          {onRetry && (
-            <button type="button" className="chip" onClick={onRetry}>
-              Verificar de novo
-            </button>
-          )}
-        </Note>
+        <OllamaOffline what="O tutor" model={status.model} onRetry={onRetry} />
       ) : (
         <>
           <p className="muted small">

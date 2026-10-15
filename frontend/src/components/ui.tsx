@@ -111,3 +111,18 @@ export function AiDisabled({ what = 'Desabilitado neste servidor' }: { what?: st
     </>
   )
 }
+
+/** Aviso quando o recurso roda num modelo local e o Ollama não respondeu. */
+export function OllamaOffline({ what, model, onRetry }: { what: string; model: string; onRetry?: () => void }) {
+  return (
+    <Note tone="warn">
+      {what} roda num modelo local (<strong>{model}</strong>) pelo Ollama, que não respondeu. Instale o Ollama (ollama.com), rode{' '}
+      <code>ollama pull {model}</code> e deixe-o aberto (ou rode <code>ollama serve</code>).{' '}
+      {onRetry && (
+        <button type="button" className="chip" onClick={onRetry}>
+          Verificar de novo
+        </button>
+      )}
+    </Note>
+  )
+}
