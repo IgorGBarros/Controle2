@@ -44,9 +44,8 @@ export interface LlmStatus {
   model: string
   provider?: 'anthropic' | 'ollama' | null
   reachable?: boolean
-  /** O tutor e o assistente de sintonia têm provedor próprio (Ollama por padrão). */
-  tutor?: Omit<LlmStatus, 'tutor' | 'tuning'>
-  tuning?: Omit<LlmStatus, 'tutor' | 'tuning'>
+  /** O Assistente IA tem provedor próprio (Ollama por padrão). */
+  assistant?: Omit<LlmStatus, 'assistant'>
 }
 
 /** Nome do modelo para exibir, indicando quando ele roda localmente. */
@@ -84,36 +83,6 @@ export async function describeSystem(text: string, signal?: AbortSignal): Promis
 }
 
 /** Envia a conversa ao tutor e repassa cada trecho de texto recebido (Server-Sent Events). */
-export async function askTutor(request: AnalyzeRequest, messages: ChatMessage[], onDelta: (text: string) => void, signal?: AbortSignal): Promise<void> {
-  const resp = await fetch(`${BASE}/api/tutor/`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ request, messages }),
-    signal,
-  })
-  if (!resp.ok || !resp.body) {
-    await handle(resp)
-    return
-  }
-  const reader = resp.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let idx
-    while ((idx = buffer.indexOf('\n\n')) >= 0) {
-      const line = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 2)
-      if (!line.startsWith('data: ')) continue
-      const event = JSON.parse(line.slice(6)) as { delta?: string; done?: boolean; error?: string }
-      if (event.error) throw new ApiError(event.error)
-      if (event.delta) onDelta(event.delta)
-    }
-  }
-}
-
 /* ---- Simulação no tempo ---- */
 
 export interface SimParams {
@@ -178,7 +147,7 @@ export async function simulateLoop(request: AnalyzeRequest, sim: SimParams, sign
 }
 
 
-/* ---- Assistente de sintonia (IA) ---- */
+/* ---- Assistente IA (tutor + sintonia) ---- */
 
 export interface TuneRecommendation {
   kp: number
@@ -193,19 +162,35 @@ export interface TuneRecommendation {
   atendeu: boolean
 }
 
-export type TuneEvent =
-  | { type: 'start' }
-  | { type: 'text'; text: string }
-  | { type: 'tool'; name: 'simular' | 'otimizar'; input: Record<string, number | string>; result: { ganhos: { kp: number; ki: number; kd: number }; metricas: SimMetrics; violacoes?: Record<string, unknown>; avaliacoes?: number } }
-  | { type: 'final'; recommendation: TuneRecommendation; metrics: SimMetrics }
+export interface ToolResult {
+  ganhos?: { kp: number; ki: number; kd: number }
+  metricas?: SimMetrics
+  violacoes?: Record<string, unknown>
+  avaliacoes?: number
+  disponivel?: boolean
+  motivo?: string
+  avisos?: string[]
+}
+
+export type AssistantEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'tool'; name: 'simular' | 'otimizar' | 'sintonia_rede_neural'; input: Record<string, number | string>; result: ToolResult }
+  | { type: 'proposal'; recommendation: TuneRecommendation; metrics: SimMetrics }
   | { type: 'error'; error: string }
   | { type: 'done' }
 
-export async function tuneController(request: AnalyzeRequest, sim: SimParams, goal: string, onEvent: (e: TuneEvent) => void, signal?: AbortSignal): Promise<void> {
-  const resp = await fetch(`${BASE}/api/tune/`, {
+/** Assistente IA (tutor + sintonia) em streaming. `sim` é o cenário configurado no simulador. */
+export async function askAssistant(
+  request: AnalyzeRequest,
+  sim: SimParams | null,
+  messages: ChatMessage[],
+  onEvent: (e: AssistantEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const resp = await fetch(`${BASE}/api/assistant/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ request, sim, goal }),
+    body: JSON.stringify({ request, messages, ...(sim ? { sim } : {}) }),
     signal,
   })
   if (!resp.ok || !resp.body) {
@@ -223,10 +208,11 @@ export async function tuneController(request: AnalyzeRequest, sim: SimParams, go
     while ((idx = buffer.indexOf('\n\n')) >= 0) {
       const line = buffer.slice(0, idx)
       buffer = buffer.slice(idx + 2)
-      if (line.startsWith('data: ')) onEvent(JSON.parse(line.slice(6)) as TuneEvent)
+      if (line.startsWith('data: ')) onEvent(JSON.parse(line.slice(6)) as AssistantEvent)
     }
   }
 }
+
 
 
 /* ---- Sintonia aprendida (rede neural) ---- */

@@ -36,3 +36,10 @@ export function completeLoop(spec: LoopSpec): Required<LoopSpec> {
     pade_order: spec.pade_order ?? 2,
   }
 }
+
+/** Pedidos de sintonia sugeridos (Assistente IA e atalho do simulador). */
+export const TUNE_GOALS = [
+  'Sintonize um PID com sobressinal abaixo de 5%, mesmo que fique mais lento.',
+  'O atuador satura: minimize a acomodação sem windup.',
+  'Qual sintonia a rede neural sugere? Compare com Ziegler-Nichols.',
+]

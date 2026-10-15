@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Assistant, type Applied } from './components/Assistant'
 import { Report } from './components/Report'
 import { Simulator } from './components/Simulator'
 import { SystemForm } from './components/SystemForm'
 import { Tex } from './components/Tex'
-import { Tutor } from './components/Tutor'
 import { Note, StabilityBadge } from './components/ui'
 import { ItemAView, ItemBView, ItemCView, ItemDView, ItemEView, ItemFView, ItemGView } from './items/ItemsAtoG'
 import { ItemHView, ItemIView, ItemJView, ItemMView, ItemNView, ItemOView, ItemPView, ItemQView, ItemRView, TransientView } from './items/ItemsHtoR'
-import { analyze, ApiError, fetchExamples, fetchLlmStatus, modelLabel, type LlmStatus } from './lib/api'
+import { analyze, ApiError, fetchExamples, fetchLlmStatus, type LlmStatus, type SimParams } from './lib/api'
 import { DEFAULT_LOOP, DEFAULT_PARAMS } from './lib/defaults'
 import { fmtCx } from './lib/format'
 import type { AnalysisResult, AnalyzeRequest, Example, Item } from './lib/types'
@@ -44,18 +44,19 @@ const GROUPS: { title: string; keys: string[] }[] = [
 ]
 const ORDER = GROUPS.flatMap((g) => g.keys)
 
-type Tab = 'malha' | 'analise' | 'simulacao' | 'relatorio' | 'tutor'
+type Tab = 'malha' | 'analise' | 'simulacao' | 'relatorio' | 'assistente'
 const TABS: { id: Tab; label: string; needsResult?: boolean }[] = [
   { id: 'malha', label: 'Malha' },
   { id: 'analise', label: 'Análise', needsResult: true },
   { id: 'simulacao', label: 'Simulação', needsResult: true },
   { id: 'relatorio', label: 'Relatório', needsResult: true },
-  { id: 'tutor', label: 'Tutor IA', needsResult: true },
+  { id: 'assistente', label: 'Assistente IA', needsResult: true },
 ]
 
 /** Navegação pelo hash da URL: #/analise/j — permite voltar no navegador e compartilhar o link. */
 function readHash(): { tab: Tab; item: string } {
-  const [, tab, item] = window.location.hash.split('/')
+  const [, raw, item] = window.location.hash.split('/')
+  const tab = raw === 'tutor' ? 'assistente' : raw // links antigos
   const t = TABS.some((x) => x.id === tab) ? (tab as Tab) : 'malha'
   return { tab: t, item: ORDER.includes(item) ? item : 'a' }
 }
@@ -222,6 +223,24 @@ export default function App() {
     [go],
   )
 
+  const [simScenario, setSimScenario] = useState<SimParams | null>(null)
+  const [assistantPrompt, setAssistantPrompt] = useState<{ text: string; nonce: number } | null>(null)
+  const [applyRequest, setApplyRequest] = useState<{ gains: Applied; nonce: number } | null>(null)
+  const askAssistantFromSim = useCallback(
+    (text: string) => {
+      setAssistantPrompt({ text, nonce: Date.now() })
+      go('assistente')
+    },
+    [go],
+  )
+  const applyFromAssistant = useCallback(
+    (gains: Applied) => {
+      setApplyRequest({ gains, nonce: Date.now() })
+      go('simulacao')
+    },
+    [go],
+  )
+
   const refreshLlm = useCallback(() => {
     fetchLlmStatus().then(setLlm).catch(() => undefined)
   }, [])
@@ -281,13 +300,20 @@ export default function App() {
         {result && activeTab === 'analise' && <Analysis result={result} current={item} go={go} />}
         {result && lastRequest && (
           <div hidden={activeTab !== 'simulacao'}>
-            <Simulator request={lastRequest} result={result} tuningStatus={llm.tuning ?? llm} onRetryLlm={refreshLlm} />
+            <Simulator request={lastRequest} result={result} onScenario={setSimScenario} applyRequest={applyRequest} onAskAssistant={askAssistantFromSim} />
           </div>
         )}
         {result && activeTab === 'relatorio' && result.report && <Report report={result.report} k={result.params.k} />}
         {result && lastRequest && (
-          <div hidden={activeTab !== 'tutor'}>
-            <Tutor request={lastRequest} status={llm.tutor ?? llm} model={modelLabel(llm.tutor ?? llm)} onRetry={refreshLlm} />
+          <div hidden={activeTab !== 'assistente'}>
+            <Assistant
+              request={lastRequest}
+              sim={simScenario}
+              status={llm.assistant ?? llm}
+              onRetry={refreshLlm}
+              onApply={applyFromAssistant}
+              prompt={assistantPrompt}
+            />
           </div>
         )}
       </div>

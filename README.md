@@ -34,7 +34,7 @@ Ela é útil para:
 ```
 
 A interface é dividida em abas: **Malha** (montagem do sistema), **Análise** (os 18 itens, agrupados por tema
-e mostrados um de cada vez), **Simulação** (simulação no tempo com animação), **Relatório** e **Tutor IA**.
+e mostrados um de cada vez), **Simulação** (simulação no tempo com animação), **Relatório** e **Assistente IA**.
 
 1. **Monte a malha.** Informe a planta **G(s)** (função de transferência, zeros/polos/ganho ou espaço de
    estados), um **atraso** opcional, o **controlador C(s)** (função de transferência ou PID), o **sensor H(s)**
@@ -45,7 +45,7 @@ e mostrados um de cada vez), **Simulação** (simulação no tempo com animaçã
 3. **Clique em "Analisar malha".** O backend calcula os 18 itens e o relatório; o frontend mostra cada item
    com fórmulas, tabelas e gráficos interativos.
 4. **Simule** a malha no tempo, ajustando os ganhos do PID e acrescentando saturação, perturbação e ruído.
-5. **Leia o relatório final** e, se quiser, **converse com o tutor de IA** sobre os resultados.
+5. **Leia o relatório final** e, se quiser, **converse com o Assistente IA**: tire dúvidas sobre os resultados ou peça uma sintonia.
 
 ![Aba Análise: itens agrupados por tema, um de cada vez](docs/img/analise.png)
 
@@ -114,19 +114,13 @@ degrau mostrado no Scope original — isso é verificado por um teste automatiza
 
 ![Simulação com saturação: resposta com anti-windup comparada à resposta fixada sem anti-windup](docs/img/simulacao-windup.png)
 
-#### Assistente de sintonia com IA
+#### Pedir uma sintonia ao Assistente IA
 
-Dentro do simulador, o aluno descreve o objetivo ("sobressinal abaixo de 5% e o atuador não pode passar de 20")
-e o assistente:
-
-1. traduz o objetivo em especificações numéricas;
-2. escolhe a estrutura (P, PI, PD ou PID) e a variante (derivada sobre erro ou medição, anti-windup);
-3. usa como ferramentas o **simulador** e um **otimizador numérico** (Nelder-Mead minimizando IAE, ITAE ou ISE
-   com penalidade para as restrições), mudando de estratégia quando uma restrição não é atendida;
-4. entrega a recomendação com o compromisso envolvido; a sintonia é re-simulada pelo motor e pode ser aplicada
-   aos *sliders* com um clique.
-
-O Claude decide **o que** otimizar; os **números** vêm sempre do simulador e do otimizador.
+No fim da aba Simulação, o aluno descreve o objetivo ("sobressinal abaixo de 5% e o atuador não pode passar
+de 20") e o pedido vai para o [Assistente IA](#recursos-de-ia-opcionais), junto com o cenário configurado
+(saturação, perturbação, ruído). O assistente traduz o objetivo em especificações, escolhe a estrutura (P, PI,
+PD ou PID) e usa o simulador, o otimizador e a rede neural para chegar aos ganhos. A sintonia proposta é
+re-simulada pelo motor e aplicada aos *sliders* com um clique.
 
 #### Sintonia por rede neural (aprendida com os 18 itens)
 
@@ -192,21 +186,27 @@ O relatório pode ser impresso ou salvo em PDF pelo navegador.
 
 ### Recursos de IA (opcionais)
 
-- **Tutor de IA** — um chat que responde perguntas sobre a malha analisada ("por que o sobressinal aumenta com
-  K?"), explicando com base nos dois livros acima.
-- **Assistente de sintonia** — dentro do simulador, encontra os ganhos do controlador a partir de um objetivo
-  em linguagem natural, usando o simulador e o otimizador como ferramentas.
-- **Descrever o sistema em linguagem natural** — por exemplo, *"motor CC com J = 0,01 kg·m², b = 0,1 N·m·s,
-  R = 1 Ω e L = 0,5 H"*. O modelo deriva G(s), C(s) e H(s), mostra a modelagem e as hipóteses, e a malha só é
-  usada depois de **validada pelo motor de cálculo**. O formulário é preenchido para você conferir antes de
-  analisar.
+**Assistente IA** — um único chat que faz duas coisas:
 
-**O tutor e o assistente de sintonia rodam num modelo local, `qwen3.5`, pelo Ollama**: sem chave de API, sem
-custo e sem enviar a sua malha para fora da máquina. Basta instalar o Ollama e baixar o modelo (veja
-[Habilitar a IA](#habilitar-a-ia-opcional)). A entrada em linguagem natural usa o Claude (`ANTHROPIC_API_KEY`)
-ou, se preferir, também o Ollama (`LLM_PROVIDER=ollama`). Sem nada configurado, a ferramenta funciona
-normalmente e cada painel explica como habilitar o seu recurso. A sintonia por rede neural não depende de
-nenhum deles: roda no próprio backend.
+- **Explica** (papel de tutor): responde perguntas sobre a malha analisada ("por que o sobressinal aumenta com
+  K?", "como interpretar as margens?"), usando os resultados calculados e fundamentando em Ogata e Meza.
+- **Sintoniza**: quando o pedido é de ganhos ("sintonize um PID com sobressinal abaixo de 5%"), traduz o
+  objetivo em especificações e usa as ferramentas da própria aplicação: o **simulador** (no cenário da aba
+  Simulação), o **otimizador numérico** e a **rede neural de sintonia**. A resposta traz um cartão com os
+  ganhos, as métricas re-simuladas pelo motor e o botão **Aplicar ao simulador**.
+
+A conversa tem histórico: dá para perguntar "e se o atuador saturar em ±10?" depois de uma proposta. O
+assistente roda num **modelo local, `qwen3.5`, pelo Ollama**: sem chave de API, sem custo e sem enviar a sua
+malha para fora da máquina (veja [Habilitar a IA](#habilitar-a-ia-opcional)).
+
+**Descrever o sistema em linguagem natural** — por exemplo, *"motor CC com J = 0,01 kg·m², b = 0,1 N·m·s,
+R = 1 Ω e L = 0,5 H"*. O modelo deriva G(s), C(s) e H(s), mostra a modelagem e as hipóteses, e a malha só é
+usada depois de **validada pelo motor de cálculo**. Usa o Claude (`ANTHROPIC_API_KEY`) ou, se preferir, também
+o Ollama (`LLM_PROVIDER=ollama`).
+
+Sem nada configurado, a ferramenta funciona normalmente e cada painel explica como habilitar o seu recurso. A
+sintonia por rede neural (o painel próprio no simulador) não depende de nenhum modelo de linguagem: roda no
+próprio backend.
 
 ### Princípio: os números vêm sempre do motor de cálculo
 
@@ -256,8 +256,7 @@ Acesse <http://localhost:5173>. Em desenvolvimento, o Vite encaminha `/api` para
 
 | Recurso | Provedor padrão | Como trocar |
 |---|---|---|
-| Tutor de IA | Ollama (`qwen3.5`, local) | `TUTOR_PROVIDER=anthropic` (exige `ANTHROPIC_API_KEY`) |
-| Assistente de sintonia | Ollama (`qwen3.5`, local) | `TUNING_PROVIDER=anthropic` (exige `ANTHROPIC_API_KEY`) |
+| Assistente IA (tutor + sintonia) | Ollama (`qwen3.5`, local) | `ASSISTANT_PROVIDER=anthropic` (exige `ANTHROPIC_API_KEY`) |
 | Linguagem natural | Claude (`ANTHROPIC_API_KEY`) | `LLM_PROVIDER=ollama` |
 
 #### 1. Instalar o Ollama
@@ -303,9 +302,9 @@ no navegador: deve aparecer *"Ollama is running"*.
 
 #### 4. Iniciar a ferramenta
 
-Inicie o backend e o frontend normalmente (veja acima). **Não é preciso definir nenhuma variável**: o tutor e o
-assistente de sintonia mostram *"Modelo: qwen3.5 (local, via Ollama)"*. Se o Ollama não estiver no ar, os
-painéis explicam o que fazer e têm um botão **Verificar de novo**.
+Inicie o backend e o frontend normalmente (veja acima). **Não é preciso definir nenhuma variável**: a aba
+Assistente IA mostra *"Modelo: qwen3.5 (local, via Ollama)"*. Se o Ollama não estiver no ar, o painel
+explica o que fazer e tem um botão **Verificar de novo**.
 
 #### Problemas comuns
 
@@ -330,13 +329,12 @@ Todas são opcionais; use só as que precisar. Defina-as no mesmo terminal, ante
 
 | Variável | Padrão | Para quê |
 |---|---|---|
-| `OLLAMA_MODEL` | `qwen3.5` | Outro modelo do Ollama (precisa suportar ferramentas para o assistente de sintonia) |
+| `OLLAMA_MODEL` | `qwen3.5` | Outro modelo do Ollama (precisa suportar chamada de ferramentas) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Endereço do Ollama (por exemplo, em outra máquina da rede) |
 | `OLLAMA_NUM_CTX` | `8192` | Janela de contexto em tokens. O contexto da análise ocupa ~4 mil; reduza se faltar memória |
 | `OLLAMA_THINK` | `0` | `1` liga o modo de raciocínio do modelo (respostas melhores, porém mais lentas) |
 | `OLLAMA_TIMEOUT` | `600` | Tempo máximo de uma resposta, em segundos |
-| `TUTOR_PROVIDER` | `ollama` | `anthropic` usa o Claude no tutor |
-| `TUNING_PROVIDER` | `ollama` | `anthropic` usa o Claude no assistente de sintonia |
+| `ASSISTANT_PROVIDER` | `ollama` | `anthropic` usa o Claude no Assistente IA |
 | `LLM_PROVIDER` | `anthropic` | `ollama` usa o modelo local também na linguagem natural |
 | `ANTHROPIC_API_KEY` | — | Chave da API do Claude |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Modelo do Claude |
@@ -363,9 +361,9 @@ No PowerShell, `$env:` vale só para a janela atual. Para gravar de forma perman
 
 #### Como funciona e o que vai para fora
 
-O backend usa a API nativa do Ollama (`/api/chat`) só com a biblioteca padrão do Python. O tutor usa
-streaming; a linguagem natural usa saída estruturada por JSON Schema (`format`); o assistente de sintonia usa
-a chamada de ferramentas nativa. Para caber na memória de um computador comum, o modelo local recebe uma
+O backend usa a API nativa do Ollama (`/api/chat`) só com a biblioteca padrão do Python. O Assistente IA usa
+streaming com a chamada de ferramentas nativa; a linguagem natural usa saída estruturada por JSON Schema
+(`format`). Para caber na memória de um computador comum, o modelo local recebe uma
 versão enxuta dos resultados (sem o texto do relatório e sem os campos que só servem à interface, ~4 mil
 tokens). Como modelos locais nem sempre respeitam o schema à risca, os argumentos das ferramentas são
 completados e saneados antes de chegar ao simulador e ao otimizador. O princípio não muda: **os números vêm
@@ -402,10 +400,9 @@ de dados.
 | `POST` | `/api/simulate/` | Simulação no tempo (`{"request": <corpo do /api/analyze/>, "sim": {...}}`) |
 | `GET` | `/api/examples/` | Malhas de exemplo |
 | `GET` | `/api/health/` | Verificação de saúde |
-| `GET` | `/api/llm/status/` | Provedor (`anthropic` ou `ollama`), modelo e disponibilidade da IA; os campos `tutor` e `tuning` trazem o mesmo para o tutor e o assistente de sintonia |
+| `GET` | `/api/llm/status/` | Provedor (`anthropic` ou `ollama`), modelo e disponibilidade da IA; o campo `assistant` traz o mesmo para o Assistente IA |
 | `POST` | `/api/describe/` | Linguagem natural → malha (`{"text": "..."}`) |
-| `POST` | `/api/tutor/` | Tutor em streaming (`text/event-stream`) |
-| `POST` | `/api/tune/` | Assistente de sintonia em streaming (`{"request", "sim", "goal"}`) |
+| `POST` | `/api/assistant/` | Assistente IA em streaming (`{"request", "sim"?, "messages"}`) |
 | `POST` | `/api/learned-tuning/` | Ganhos de PID sugeridos pela rede neural (`{"request": <corpo do /api/analyze/>}`) |
 
 Exemplo de corpo para `/api/analyze/`:
@@ -430,8 +427,10 @@ Exemplo de corpo para `/api/analyze/`:
 A planta também aceita `{"mode": "zpk", "zeros": "-3", "poles": "0, -2, -4", "gain": 8}` ou
 `{"mode": "ss", "A": "[0 1; -2 -0.5]", "B": "[0; 1]", "C": "[1 0]", "D": "0"}`, e o controlador aceita
 `{"mode": "pid", "kp": 20, "ki": 10, "kd": 5}`. Campos opcionais: `k_step`, `k_ramp`, `k_impulse`,
-`sine_amp`, `tfinal`. O tutor recebe `{"request": <mesmo corpo do /api/analyze/>, "messages": [...]}` e
-responde com eventos `{"delta": "..."}` seguidos de `{"done": true}`.
+`sine_amp`, `tfinal`. O Assistente IA recebe `{"request": <mesmo corpo do /api/analyze/>, "sim": <cenário do
+/api/simulate/, opcional>, "messages": [...]}` e responde com eventos SSE: `delta` (texto), `tool` (chamada do
+simulador, do otimizador ou da rede neural, com o resultado), `proposal` (sintonia proposta, re-simulada),
+`error` e `done`.
 
 ## Estrutura do projeto
 
@@ -451,9 +450,9 @@ backend/
       narrative.py        relatório final explicativo
       report.py           orquestração e serialização JSON
     examples.py           malhas de exemplo
-    llm.py                tutor e entrada em linguagem natural (Claude ou Ollama)
+    llm.py                provedores, contexto da análise e linguagem natural (Claude ou Ollama)
     ollama_client.py      cliente da API do Ollama para modelos locais (ex.: qwen3.5)
-    tuning.py             assistente de sintonia (Claude + simulador + otimizador)
+    assistant.py          Assistente IA: tutor + sintonia (simulador, otimizador e rede neural como ferramentas)
     ml/                   geração de dados, treino e o modelo exportado (model/sintonia_mlp.json)
     management/commands/  gerar_dataset_sintonia, treinar_sintonia
     views.py, urls.py     API REST
@@ -461,7 +460,7 @@ backend/
 frontend/
   src/
     lib/                  tipos, cliente da API, formatação
-    components/           formulário, diagrama da malha, gráficos, relatório, tutor
+    components/           formulário, diagrama da malha, gráficos, relatório, Assistente IA
     items/                visualização de cada item
 docs/img/                 imagens deste README
 ```

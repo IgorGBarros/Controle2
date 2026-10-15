@@ -1,9 +1,8 @@
 """Cliente mínimo da API nativa do Ollama (/api/chat), só com a biblioteca padrão.
 
-Permite usar um modelo local (por exemplo, ``qwen3.5``) no lugar do Claude nos recursos de IA
-(o tutor e o assistente de sintonia usam o Ollama por padrão):
-tutor (streaming), entrada em linguagem natural (saída estruturada por JSON Schema) e
-assistente de sintonia (chamada de ferramentas).
+Permite usar um modelo local (por exemplo, ``qwen3.5``) no lugar do Claude: o Assistente IA
+(streaming com chamada de ferramentas; usa o Ollama por padrão) e a entrada em linguagem natural
+(saída estruturada por JSON Schema).
 
 Configuração (variáveis de ambiente):
     OLLAMA_HOST       endereço do servidor (padrão: http://localhost:11434)
@@ -117,10 +116,17 @@ def chat(messages: list[dict], system: str | None = None, *, fmt: dict | None = 
     return msg
 
 
-def chat_stream(messages: list[dict], system: str | None = None) -> Iterator[str]:
-    """Rodada com streaming: produz pedaços de texto da resposta (o raciocínio, se houver, é descartado)."""
+def chat_stream(messages: list[dict], system: str | None = None, *,
+                tools: list[dict] | None = None) -> Iterator[tuple[str, object]]:
+    """Rodada com streaming. Produz ("text", pedaço) e, no fim, ("message", {content, tool_calls, done_reason}).
+
+    O raciocínio do modelo, se houver, é descartado; chamadas de ferramenta são acumuladas.
+    """
     body = {"model": model(), "messages": ([{"role": "system", "content": system}] if system else []) + messages,
             "stream": True, "think": _think(), "options": _options()}
+    if tools:
+        body["tools"] = tools_schema(tools)
+    content, calls, reason = [], [], None
     with _open_chat(body) as resp:
         for line in resp:
             if not line.strip():
@@ -128,13 +134,15 @@ def chat_stream(messages: list[dict], system: str | None = None) -> Iterator[str
             data = json.loads(line.decode())
             if data.get("error"):
                 raise OllamaError(str(data["error"]))
-            text = (data.get("message") or {}).get("content")
-            if text:
-                yield text
+            msg = data.get("message") or {}
+            if msg.get("content"):
+                content.append(msg["content"])
+                yield "text", msg["content"]
+            calls += msg.get("tool_calls") or []
             if data.get("done"):
-                if data.get("done_reason") == "length":
-                    yield "\n\n(Resposta interrompida por tamanho.)"
+                reason = data.get("done_reason")
                 break
+    yield "message", {"content": "".join(content), "tool_calls": calls, "done_reason": reason}
 
 
 def reachable(timeout: float = 1.5) -> bool:

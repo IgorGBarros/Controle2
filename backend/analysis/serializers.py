@@ -70,20 +70,6 @@ class ChatMessageSerializer(serializers.Serializer):
     content = serializers.CharField(max_length=6000)
 
 
-class TutorSerializer(serializers.Serializer):
-    request = AnalyzeSerializer()
-    messages = ChatMessageSerializer(many=True, min_length=1, max_length=30)
-
-    def validate_messages(self, msgs):
-        for i, m in enumerate(msgs):
-            expected = "user" if i % 2 == 0 else "assistant"
-            if m["role"] != expected:
-                raise serializers.ValidationError("As mensagens devem alternar entre usuário e tutor, começando pelo usuário.")
-        if msgs[-1]["role"] != "user":
-            raise serializers.ValidationError("A última mensagem deve ser do usuário.")
-        return msgs
-
-
 class DescribeSerializer(serializers.Serializer):
     text = serializers.CharField(max_length=4000, min_length=3)
 
@@ -122,11 +108,20 @@ class SimulateSerializer(serializers.Serializer):
     sim = SimulationSerializer()
 
 
-class TuneSerializer(serializers.Serializer):
-    request = AnalyzeSerializer()
-    sim = SimulationSerializer()
-    goal = serializers.CharField(max_length=2000, min_length=3)
-
-
 class LearnedTuningSerializer(serializers.Serializer):
     request = AnalyzeSerializer()
+
+
+class AssistantSerializer(serializers.Serializer):
+    request = AnalyzeSerializer()
+    sim = SimulationSerializer(required=False)
+    messages = ChatMessageSerializer(many=True, min_length=1, max_length=30)
+
+    def validate_messages(self, msgs):
+        for i, m in enumerate(msgs):
+            expected = "user" if i % 2 == 0 else "assistant"
+            if m["role"] != expected:
+                raise serializers.ValidationError("As mensagens devem alternar entre usuário e assistente, começando pelo usuário.")
+        if msgs[-1]["role"] != "user":
+            raise serializers.ValidationError("A última mensagem deve ser do usuário.")
+        return msgs
