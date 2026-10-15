@@ -112,6 +112,7 @@ export interface SimParams {
   ki: number
   kd: number
   n_filter: number
+  derivative_on: 'error' | 'measurement'
   k: number
   anti_windup: 'none' | 'clamping' | 'back_calculation'
   ts_ctrl: number
@@ -120,6 +121,7 @@ export interface SimParams {
   ref_type: 'step' | 'square' | 'ramp' | 'sine'
   ref_amp: number
   ref_period: number
+  ref_t0: number
   dist_time: number | null
   dist_amp: number
   noise_std: number
@@ -163,4 +165,55 @@ export async function simulateLoop(request: AnalyzeRequest, sim: SimParams, sign
     signal,
   })
   return handle<SimResult>(resp)
+}
+
+
+/* ---- Assistente de sintonia (IA) ---- */
+
+export interface TuneRecommendation {
+  kp: number
+  ki: number
+  kd: number
+  estrutura: 'P' | 'PI' | 'PD' | 'PID'
+  anti_windup: SimParams['anti_windup']
+  derivative_on: SimParams['derivative_on']
+  especificacao: string
+  resumo: string
+  compromissos: string
+  atendeu: boolean
+}
+
+export type TuneEvent =
+  | { type: 'start' }
+  | { type: 'text'; text: string }
+  | { type: 'tool'; name: 'simular' | 'otimizar'; input: Record<string, number | string>; result: { ganhos: { kp: number; ki: number; kd: number }; metricas: SimMetrics; violacoes?: Record<string, unknown>; avaliacoes?: number } }
+  | { type: 'final'; recommendation: TuneRecommendation; metrics: SimMetrics }
+  | { type: 'error'; error: string }
+  | { type: 'done' }
+
+export async function tuneController(request: AnalyzeRequest, sim: SimParams, goal: string, onEvent: (e: TuneEvent) => void, signal?: AbortSignal): Promise<void> {
+  const resp = await fetch(`${BASE}/api/tune/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request, sim, goal }),
+    signal,
+  })
+  if (!resp.ok || !resp.body) {
+    await handle(resp)
+    return
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let idx
+    while ((idx = buffer.indexOf('\n\n')) >= 0) {
+      const line = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 2)
+      if (line.startsWith('data: ')) onEvent(JSON.parse(line.slice(6)) as TuneEvent)
+    }
+  }
 }

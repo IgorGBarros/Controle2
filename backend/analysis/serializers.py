@@ -93,7 +93,8 @@ class SimulationSerializer(serializers.Serializer):
     kp = serializers.FloatField(default=1.0, min_value=-1e6, max_value=1e6)
     ki = serializers.FloatField(default=0.0, min_value=-1e6, max_value=1e6)
     kd = serializers.FloatField(default=0.0, min_value=-1e6, max_value=1e6)
-    n_filter = serializers.FloatField(default=20.0, min_value=0.1, max_value=1e5)
+    n_filter = serializers.FloatField(default=100.0, min_value=0.1, max_value=1e5)
+    derivative_on = serializers.ChoiceField(choices=["error", "measurement"], default="error")
     k = serializers.FloatField(default=1.0, min_value=-1e9, max_value=1e9)
     anti_windup = serializers.ChoiceField(choices=["none", "clamping", "back_calculation"], default="clamping")
     ts_ctrl = serializers.FloatField(default=0.0, min_value=0.0, max_value=100.0)
@@ -102,6 +103,7 @@ class SimulationSerializer(serializers.Serializer):
     ref_type = serializers.ChoiceField(choices=["step", "square", "ramp", "sine"], default="step")
     ref_amp = serializers.FloatField(default=1.0, min_value=-1e6, max_value=1e6)
     ref_period = serializers.FloatField(default=10.0, min_value=0.01, max_value=1e4)
+    ref_t0 = serializers.FloatField(default=0.0, min_value=0.0, max_value=1e4)
     dist_time = serializers.FloatField(required=False, allow_null=True, min_value=0.0)
     dist_amp = serializers.FloatField(default=0.0, min_value=-1e6, max_value=1e6)
     noise_std = serializers.FloatField(default=0.0, min_value=0.0, max_value=1e6)
@@ -118,3 +120,9 @@ class SimulationSerializer(serializers.Serializer):
 class SimulateSerializer(serializers.Serializer):
     request = AnalyzeSerializer()
     sim = SimulationSerializer()
+
+
+class TuneSerializer(serializers.Serializer):
+    request = AnalyzeSerializer()
+    sim = SimulationSerializer()
+    goal = serializers.CharField(max_length=2000, min_length=3)

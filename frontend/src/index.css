@@ -263,6 +263,14 @@ fieldset.block legend { font-weight: 600; padding: 0 6px; color: var(--text-prim
 .sim-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .is-loading { opacity: .6; transition: opacity .2s; }
 
+.tuner { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); display: grid; gap: 10px; }
+.tuner h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-primary); }
+.tuner textarea { font: inherit; color: var(--text-primary); background: var(--surface-0); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; resize: vertical; }
+.tuner-log { display: grid; gap: 8px; }
+.tuner-log .bubble { max-width: 100%; }
+.tuner-tool { display: grid; gap: 2px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; padding: 6px 12px; font-size: .88rem; }
+.tuner-final { background: var(--surface-2); border-radius: 10px; padding: 10px 14px; }
+
 @media print {
   :root, :root:not([data-theme='light']) {
     color-scheme: light;

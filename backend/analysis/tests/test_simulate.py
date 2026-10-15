@@ -72,3 +72,31 @@ class SimulateApiTests(SimpleTestCase):
     def test_invalid_saturation(self):
         body = {"request": PLANT, "sim": {"u_min": 5, "u_max": 1}}
         self.assertEqual(self.client.post("/api/simulate/", body, content_type="application/json").status_code, 400)
+
+
+class SimulinkFidelityTests(SimpleTestCase):
+    """Reproduz o diagrama do SIMULINK do item r do trabalho de 2013."""
+
+    GAINS = dict(kp=46.1129, ki=53.80365, kd=10.2266)  # médias usadas no trabalho
+
+    def setUp(self):
+        self.lp = build_loop({"plant": {"mode": "zpk", "poles": "-10, -0.65+0.759934j, -0.65-0.759934j", "gain": 1}})
+
+    def test_matches_simulink_pid_block(self):
+        # bloco Step em t = 1 s, PID paralelo com filtro N = 100 e derivada sobre o erro
+        r = simulate(self.lp, SimParams(**self.GAINS, n_filter=100, derivative_on="error", ref_t0=1.0, tfinal=15))
+        n = 100
+        c = TF(np.polyadd(np.polymul([46.1129, 53.80365], [1, n]), [10.2266 * n, 0, 0]), np.polymul([1, 0], [1, n]))
+        T = self.lp.with_controller(c).closed(1.0)
+        tg = np.linspace(0, 14, 2801)
+        t = np.asarray(r["t"])
+        yref = np.interp(t - 1.0, tg, step(T, tg), left=0.0)
+        self.assertLess(np.max(np.abs(np.asarray(r["series"]["y"]) - yref)), 0.02)
+        y = np.asarray(r["series"]["y"])
+        self.assertAlmostEqual(y.max(), 1.49, delta=0.02)               # pico lido no Scope do trabalho
+        self.assertAlmostEqual(t[np.argmax(y)] - 1.0, 1.39, delta=0.05)
+
+    def test_item_r_uses_simulink_form(self):
+        from analysis.engine import analyze_tf
+        r = {it["key"]: it for it in analyze_tf("1", "1 11.3 14 10")["items"]}["r"]["data"]
+        self.assertEqual(r["n_filter"], 100.0)

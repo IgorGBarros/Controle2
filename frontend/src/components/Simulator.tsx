@@ -3,11 +3,13 @@ import { ApiError, simulateLoop, type SimParams, type SimResult } from '../lib/a
 import { fmt } from '../lib/format'
 import type { AnalysisResult, AnalyzeRequest } from '../lib/types'
 import { XYChart } from './Charts'
+import { TuningAssistant } from './TuningAssistant'
 import { Note, Stats } from './ui'
 
 interface Props {
   request: AnalyzeRequest
   result: AnalysisResult
+  llmEnabled: boolean
 }
 
 function initialGains(result: AnalysisResult): { kp: number; ki: number; kd: number; source: string } {
@@ -64,14 +66,15 @@ function Num({ label, value, onChange, suffix, optional }: { label: ReactNode; v
 const sec = (v: number | null | undefined) => (v === null || v === undefined ? 'não acomodou' : `${fmt(v)} s`)
 
 /** Simulação no tempo com saturação, anti-windup, perturbação, ruído e controlador discreto. */
-export function Simulator({ request, result }: Props) {
+export function Simulator({ request, result, llmEnabled }: Props) {
   const init = useMemo(() => initialGains(result), [result])
   const [sim, setSim] = useState<SimParams>(() => ({
     controller: 'pid',
     kp: init.kp,
     ki: init.ki,
     kd: init.kd,
-    n_filter: 20,
+    n_filter: 100,
+    derivative_on: 'error',
     k: result.params.k,
     anti_windup: 'clamping',
     ts_ctrl: 0,
@@ -80,6 +83,7 @@ export function Simulator({ request, result }: Props) {
     ref_type: 'step',
     ref_amp: 1,
     ref_period: 20,
+    ref_t0: 0,
     dist_time: null,
     dist_amp: 0,
     noise_std: 0,
@@ -105,6 +109,34 @@ export function Simulator({ request, result }: Props) {
   }
 
   const set = <K extends keyof SimParams>(k: K, v: SimParams[K]) => setSim((s) => ({ ...s, [k]: v }))
+
+  /** Mesmo diagrama do item r do trabalho: bloco PID paralelo (N = 100), degrau em t = 1 s, H(s) = 1. */
+  const reproduceSimulink = () => {
+    const g = initialGains(result)
+    setSim((s) => ({
+      ...s,
+      controller: 'pid',
+      kp: g.kp,
+      ki: g.ki,
+      kd: g.kd,
+      n_filter: 100,
+      derivative_on: 'error',
+      ts_ctrl: 0,
+      ref_type: 'step',
+      ref_amp: 1,
+      ref_t0: 1,
+      noise_std: 0,
+      tfinal: 15,
+    }))
+    setRanges({ kp: niceMax(g.kp), ki: niceMax(g.ki), kd: niceMax(g.kd) })
+    setSatOn(false)
+    setDistOn(false)
+  }
+
+  const applyTuning = (g: { kp: number; ki: number; kd: number; anti_windup: SimParams['anti_windup']; derivative_on: SimParams['derivative_on'] }) => {
+    setSim((s) => ({ ...s, controller: 'pid', ...g }))
+    setRanges((r) => ({ kp: Math.max(r.kp, niceMax(g.kp)), ki: Math.max(r.ki, niceMax(g.ki)), kd: Math.max(r.kd, niceMax(g.kd)) }))
+  }
   const effective: SimParams = useMemo(
     () => ({
       ...sim,
@@ -189,16 +221,32 @@ export function Simulator({ request, result }: Props) {
                   </select>
                 </label>
               </div>
-              <button
-                type="button"
-                className="chip"
-                onClick={() => {
-                  setSim((s) => ({ ...s, kp: init.kp, ki: init.ki, kd: init.kd }))
-                  setRanges({ kp: niceMax(init.kp), ki: niceMax(init.ki), kd: niceMax(init.kd) })
-                }}
-              >
-                Restaurar ganhos iniciais
-              </button>
+              <label className="field">
+                <span>Ação derivativa sobre</span>
+                <select value={sim.derivative_on} onChange={(e) => set('derivative_on', e.target.value as SimParams['derivative_on'])}>
+                  <option value="error">o erro (como o bloco PID do Simulink)</option>
+                  <option value="measurement">a medição (sem pico na mudança de referência)</option>
+                </select>
+              </label>
+              <div className="sim-actions">
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => {
+                    setSim((s) => ({ ...s, kp: init.kp, ki: init.ki, kd: init.kd }))
+                    setRanges({ kp: niceMax(init.kp), ki: niceMax(init.ki), kd: niceMax(init.kd) })
+                  }}
+                >
+                  Restaurar ganhos iniciais
+                </button>
+                <button type="button" className="chip" onClick={reproduceSimulink} title="PID paralelo com N = 100, derivada sobre o erro, degrau em t = 1 s, sem saturação">
+                  Reproduzir o diagrama do Simulink (item r)
+                </button>
+              </div>
+              <p className="muted small">
+                O diagrama usa os ganhos do item r desta análise. Para os ganhos exatos do trabalho de 2013, digite Kp = 46,1129, Ki = 53,80365 e Kd = 10,2266
+                (pico de 1,49, como no Scope original).
+              </p>
             </>
           ) : (
             <Num label="Ganho K (multiplica C(s))" value={sim.k} onChange={(v) => set('k', v ?? 1)} />
@@ -230,6 +278,7 @@ export function Simulator({ request, result }: Props) {
             </label>
             <Num label="Amplitude" value={sim.ref_amp} onChange={(v) => set('ref_amp', v ?? 1)} />
           </div>
+          <Num label="Início da referência" value={sim.ref_t0} onChange={(v) => set('ref_t0', Math.max(0, v ?? 0))} suffix="s" />
           {(sim.ref_type === 'square' || sim.ref_type === 'sine') && <Num label="Período da referência" value={sim.ref_period} onChange={(v) => set('ref_period', Math.max(0.01, v ?? 10))} suffix="s" />}
           <label className="field check">
             <input type="checkbox" checked={distOn} onChange={(e) => setDistOn(e.target.checked)} />
@@ -310,11 +359,12 @@ export function Simulator({ request, result }: Props) {
           )}
           <p className="muted small">
             Passo de integração {fmt(data.dt)} s{effective.ts_ctrl > 0 ? `, controlador amostrado a cada ${fmt(data.h)} s` : ''}
-            {data.delay_samples ? `, atraso exato de ${data.delay_samples} amostras` : ''}. A ação derivativa atua sobre a medição (sem “chute” na mudança de
-            referência).
+            {data.delay_samples ? `, atraso exato de ${data.delay_samples} amostras` : ''}. PID na forma paralela do Simulink: Kp + Ki/s + Kd·N·s/(s + N), com a
+            derivada sobre {effective.derivative_on === 'error' ? 'o erro' : 'a medição'}.
           </p>
         </div>
       )}
+      <TuningAssistant request={request} sim={effective} enabled={llmEnabled} onApply={applyTuning} />
     </section>
   )
 }

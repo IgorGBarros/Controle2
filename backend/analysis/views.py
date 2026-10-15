@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from .examples import EXAMPLES
 from .engine import InputError, Params, ParseError, analyze
 from . import llm
-from .serializers import AnalyzeSerializer, DescribeSerializer, SimulateSerializer, TutorSerializer
+from .serializers import AnalyzeSerializer, DescribeSerializer, SimulateSerializer, TuneSerializer, TutorSerializer
 
 
 
@@ -107,3 +107,36 @@ def simulate_view(request):
     except (ParseError, InputError, ValueError) as exc:
         return Response({"errors": {"system": [str(exc)]}}, status=status.HTTP_400_BAD_REQUEST)
     return Response(sanitize(result))
+
+
+@api_view(["POST"])
+def tune_view(request):
+    from . import tuning
+    from .engine.report import sanitize
+    from .engine.simulate import SimParams
+
+    ser = TuneSerializer(data=request.data)
+    if not ser.is_valid():
+        return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
+    if not llm.enabled():
+        return Response({"errors": {"llm": ["Recursos de IA desabilitados: defina ANTHROPIC_API_KEY no backend."]}},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    spec, params = split_request(ser.validated_data["request"])
+    base = SimParams(**ser.validated_data["sim"])
+    try:
+        llm.cached_analysis(spec, params)
+    except (ParseError, InputError, ValueError) as exc:
+        return Response({"errors": {"system": [str(exc)]}}, status=status.HTTP_400_BAD_REQUEST)
+
+    def events():
+        try:
+            for ev in tuning.tune_stream(spec, params, base, ser.validated_data["goal"]):
+                yield f"data: {json.dumps(sanitize(ev), ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"data: {json.dumps({'type': 'error', 'error': llm.friendly_error(exc)}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    resp = StreamingHttpResponse(events(), content_type="text/event-stream")
+    resp["Cache-Control"] = "no-cache"
+    resp["X-Accel-Buffering"] = "no"
+    return resp
