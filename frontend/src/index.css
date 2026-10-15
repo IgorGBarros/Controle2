@@ -254,6 +254,15 @@ fieldset.block legend { font-weight: 600; padding: 0 6px; color: var(--text-prim
 .chat-input { display: flex; gap: 8px; align-items: flex-end; }
 .chat-input textarea { flex: 1; }
 
+.sim-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 16px; margin: 12px 0; }
+.slider { display: grid; gap: 4px; font-size: .85rem; color: var(--text-secondary); }
+.slider-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; }
+.slider-head input { width: 110px; font: inherit; font-weight: 400; color: var(--text-primary); background: var(--surface-0); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; text-align: right; }
+.slider input[type='range'] { width: 100%; accent-color: var(--accent); }
+.field select { font: inherit; color: var(--text-primary); background: var(--surface-0); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.sim-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.is-loading { opacity: .6; transition: opacity .2s; }
+
 @media print {
   :root, :root:not([data-theme='light']) {
     color-scheme: light;

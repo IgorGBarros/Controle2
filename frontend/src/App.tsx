@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Report } from './components/Report'
+import { Simulator } from './components/Simulator'
 import { SystemForm } from './components/SystemForm'
 import { Tutor } from './components/Tutor'
 import { Tex } from './components/Tex'
@@ -130,6 +131,11 @@ export default function App() {
                 </li>
               ))}
               <li>
+                <a href="#simulador">
+                  <b>s)</b> Simulação no tempo
+                </a>
+              </li>
+              <li>
                 <a href="#relatorio">
                   <b>★</b> Relatório final explicativo
                 </a>
@@ -146,6 +152,7 @@ export default function App() {
             {result.items.map((it) => (
               <ItemSection key={it.key} item={it} />
             ))}
+            {lastRequest && <Simulator request={lastRequest} result={result} />}
             {result.report && <Report report={result.report} k={result.params.k} />}
             {lastRequest && <Tutor request={lastRequest} enabled={llm.enabled} model={llm.model} />}
           </main>

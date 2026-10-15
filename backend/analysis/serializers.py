@@ -86,3 +86,35 @@ class TutorSerializer(serializers.Serializer):
 
 class DescribeSerializer(serializers.Serializer):
     text = serializers.CharField(max_length=4000, min_length=3)
+
+
+class SimulationSerializer(serializers.Serializer):
+    controller = serializers.ChoiceField(choices=["pid", "loop"], default="pid")
+    kp = serializers.FloatField(default=1.0, min_value=-1e6, max_value=1e6)
+    ki = serializers.FloatField(default=0.0, min_value=-1e6, max_value=1e6)
+    kd = serializers.FloatField(default=0.0, min_value=-1e6, max_value=1e6)
+    n_filter = serializers.FloatField(default=20.0, min_value=0.1, max_value=1e5)
+    k = serializers.FloatField(default=1.0, min_value=-1e9, max_value=1e9)
+    anti_windup = serializers.ChoiceField(choices=["none", "clamping", "back_calculation"], default="clamping")
+    ts_ctrl = serializers.FloatField(default=0.0, min_value=0.0, max_value=100.0)
+    u_min = serializers.FloatField(required=False, allow_null=True)
+    u_max = serializers.FloatField(required=False, allow_null=True)
+    ref_type = serializers.ChoiceField(choices=["step", "square", "ramp", "sine"], default="step")
+    ref_amp = serializers.FloatField(default=1.0, min_value=-1e6, max_value=1e6)
+    ref_period = serializers.FloatField(default=10.0, min_value=0.01, max_value=1e4)
+    dist_time = serializers.FloatField(required=False, allow_null=True, min_value=0.0)
+    dist_amp = serializers.FloatField(default=0.0, min_value=-1e6, max_value=1e6)
+    noise_std = serializers.FloatField(default=0.0, min_value=0.0, max_value=1e6)
+    seed = serializers.IntegerField(default=1, min_value=0, max_value=2**31 - 1)
+    tfinal = serializers.FloatField(required=False, allow_null=True, min_value=0.1, max_value=2000)
+
+    def validate(self, attrs):
+        lo, hi = attrs.get("u_min"), attrs.get("u_max")
+        if lo is not None and hi is not None and lo >= hi:
+            raise serializers.ValidationError({"u_max": ["u_max deve ser maior que u_min."]})
+        return attrs
+
+
+class SimulateSerializer(serializers.Serializer):
+    request = AnalyzeSerializer()
+    sim = SimulationSerializer()

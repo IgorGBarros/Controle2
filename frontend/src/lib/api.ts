@@ -103,3 +103,64 @@ export async function askTutor(request: AnalyzeRequest, messages: ChatMessage[],
     }
   }
 }
+
+/* ---- Simulação no tempo ---- */
+
+export interface SimParams {
+  controller: 'pid' | 'loop'
+  kp: number
+  ki: number
+  kd: number
+  n_filter: number
+  k: number
+  anti_windup: 'none' | 'clamping' | 'back_calculation'
+  ts_ctrl: number
+  u_min: number | null
+  u_max: number | null
+  ref_type: 'step' | 'square' | 'ramp' | 'sine'
+  ref_amp: number
+  ref_period: number
+  dist_time: number | null
+  dist_amp: number
+  noise_std: number
+  seed: number
+  tfinal: number | null
+}
+
+export interface SimMetrics {
+  diverged: boolean
+  diverged_at?: number
+  linear_stable?: boolean
+  iae?: number
+  ise?: number
+  itae?: number
+  u_max_abs?: number
+  u_energy?: number
+  u_total_variation?: number
+  sat_time?: number
+  overshoot?: number
+  settling_time?: number | null
+  steady_error?: number
+  dist_peak?: number
+  dist_recovery?: number | null
+}
+
+export interface SimResult {
+  t: number[]
+  series: Record<'r' | 'y' | 'ym' | 'u' | 'u_raw' | 'e' | 'd', (number | null)[]>
+  metrics: SimMetrics
+  dt: number
+  h: number
+  delay_samples: number
+  tfinal: number
+}
+
+export async function simulateLoop(request: AnalyzeRequest, sim: SimParams, signal?: AbortSignal): Promise<SimResult> {
+  const resp = await fetch(`${BASE}/api/simulate/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request, sim }),
+    signal,
+  })
+  return handle<SimResult>(resp)
+}
